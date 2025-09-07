@@ -47,6 +47,17 @@
 #include <inttypes.h>
 #include "keyboard.h"
 
+#define MACRO_WSTR2(str) L ## str
+#define MACRO_WSTR(str) MACRO_WSTR2(str)
+
+#ifndef RAW_USAGE_PAGE
+#    define RAW_USAGE_PAGE 0xFF60
+#endif
+
+#ifndef RAW_USAGE_ID
+#    define RAW_USAGE_ID 0x61
+#endif
+
 #define ATTR_PACKED __attribute__((packed))
 /** Concatenates the given input into a single token, via the C Preprocessor.
  *
@@ -486,10 +497,6 @@ extern const USB_Descriptor_String_t PROGMEM SerialNumberString;
     arising out of or in connection with the use or performance of
     this software.
 */
-
-#include "util.h"
-//#include "usb_descriptor.h"
-#include "usb_descriptor_common.h"
 
 #ifdef JOYSTICK_ENABLE
 #    include "joystick.h"
@@ -1730,18 +1737,18 @@ static const USB_Descriptor_String_t PROGMEM LanguageString = {
 
 static const USB_Descriptor_String_t PROGMEM ManufacturerString = {
     .Header = {
-        .Size                   = USB_DESCRIPTOR_SIZE_LITERAL_U16STRING(USBSTR(MANUFACTURER)),
+        .Size                   = USB_DESCRIPTOR_SIZE_LITERAL_U16STRING(MACRO_WSTR(MANUFACTURER)),
         .Type                   = DTYPE_String
     },
-    .UnicodeString              = USBSTR(MANUFACTURER)
+    .UnicodeString              = MACRO_WSTR(MANUFACTURER)
 };
 
 static const USB_Descriptor_String_t PROGMEM ProductString = {
     .Header = {
-        .Size                   = USB_DESCRIPTOR_SIZE_LITERAL_U16STRING(USBSTR(PRODUCT)),
+        .Size                   = USB_DESCRIPTOR_SIZE_LITERAL_U16STRING(MACRO_WSTR(PRODUCT)),
         .Type                   = DTYPE_String
     },
-    .UnicodeString              = USBSTR(PRODUCT)
+    .UnicodeString              = MACRO_WSTR(PRODUCT)
 };
 
 // clang-format on
@@ -1750,10 +1757,10 @@ static const USB_Descriptor_String_t PROGMEM ProductString = {
 // clang-format off
 static const USB_Descriptor_String_t PROGMEM SerialNumberString = {
     .Header = {
-        .Size                   = USB_DESCRIPTOR_SIZE_LITERAL_U16STRING(USBSTR(SERIAL_NUMBER)),
+        .Size                   = USB_DESCRIPTOR_SIZE_LITERAL_U16STRING(MACRO_WSTR(SERIAL_NUMBER)),
         .Type                   = DTYPE_String
     },
-    .UnicodeString              = USBSTR(SERIAL_NUMBER)
+    .UnicodeString              = MACRO_WSTR(SERIAL_NUMBER)
 };
 // clang-format on
 
