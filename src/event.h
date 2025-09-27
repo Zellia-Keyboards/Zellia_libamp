@@ -12,8 +12,9 @@
 
 typedef enum
 {
-    KEYBOARD_EVENT_KEY_UP,
+    KEYBOARD_EVENT_NO_EVENT,
     KEYBOARD_EVENT_KEY_DOWN,
+    KEYBOARD_EVENT_KEY_UP,
     KEYBOARD_EVENT_KEY_TRUE,
     KEYBOARD_EVENT_KEY_FALSE,
     KEYBOARD_EVENT_NUM
@@ -26,5 +27,6 @@ typedef struct
     void* key;
 } KeyboardEvent;
 #define MK_EVENT(keycode, event, key) ((KeyboardEvent){(keycode), (event), (key)})
+#define CALC_EVENT(state, next_state) (((state) == (next_state) ? (next_state) ? KEYBOARD_EVENT_KEY_TRUE : KEYBOARD_EVENT_KEY_FALSE : (next_state) ? KEYBOARD_EVENT_KEY_DOWN : KEYBOARD_EVENT_KEY_UP))
 
 #endif //EVENT_H
