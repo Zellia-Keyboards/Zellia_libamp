@@ -7,7 +7,6 @@
 #include "rgb.h"
 #include "string.h"
 #include "analog.h"
-#include "qmk_midi.h"
 
 uint8_t shared_ep_send_buffer[64];
 uint8_t keyboard_send_buffer[64];
@@ -1185,7 +1184,7 @@ void keyboard_user_event_handler(KeyboardEvent event)
     {
         return;
     }
-    switch (MODIFIER(event.keycode))
+    switch (KEYCODE_GET_SUB(event.keycode))
     {
     default:
         break;

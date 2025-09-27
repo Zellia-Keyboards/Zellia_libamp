@@ -17,7 +17,6 @@
 extern "C" {
 #endif
 
-
 #define JOYSTICK_MAX_VALUE ((1 << 7) - 1)
 
 typedef int8_t JoystickAxis;
@@ -34,9 +33,14 @@ typedef struct __Joystick {
 #endif
 } __PACKED Joystick;
 
+#define JOYSTICK_KEYCODE_GET_AXIS_MAP(keycode) (KEYCODE_GET_SUB((keycode) >> 5) & 0x03)
+#define JOYSTICK_KEYCODE_IS_AXIS_INVERT(keycode) (KEYCODE_GET_SUB((keycode)) & 0x80)
+#define JOYSTICK_KEYCODE_IS_AXIS(keycode) (KEYCODE_GET_SUB((keycode)) & 0xE0)
+#define JOYSTICK_KEYCODE_GET_AXIS_INDEX(keycode) (KEYCODE_GET_SUB((keycode)) & 0x1F)
+
 void joystick_event_handler(KeyboardEvent event);
 void joystick_buffer_clear(void);
-void joystick_add_buffer(Keycode keycode);
+void joystick_add_buffer(KeyboardEvent event);
 void joystick_set_axis(Keycode keycode, AnalogValue value);
 int joystick_buffer_send(void);
 
