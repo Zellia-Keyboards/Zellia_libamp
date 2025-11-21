@@ -4,11 +4,7 @@
  *
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
-#include "stdlib.h"
-#include "stdio.h"
-#include "rgb.h"
 #include "analog.h"
-#include "advanced_key.h"
 
 AdaptiveSchimidtFilter g_analog_filters[ADVANCED_KEY_NUM];
 
@@ -62,11 +58,27 @@ void ringbuf_push(RingBuf* ringbuf, AnalogRawValue data)
     {
         ringbuf->pointer = 0;
     }
+#ifdef OPTIMIZE_MOVING_AVERAGE_FOR_RINGBUF
+    ringbuf->dirty = true;
+    ringbuf->sum -= ringbuf->datas[ringbuf->pointer];
+    ringbuf->sum += data;
+    ringbuf->dirty = false;
+#endif
     ringbuf->datas[ringbuf->pointer] = data;
 }
 
 AnalogRawValue ringbuf_avg(RingBuf* ringbuf)
 {
+#ifdef OPTIMIZE_MOVING_AVERAGE_FOR_RINGBUF
+    if (!ringbuf->dirty)
+    { 
+#ifdef OPTIMIZE_FOR_FLOAT_DIVISION
+        return (AnalogValue)(ringbuf->sum*(1/((float)RING_BUF_LEN)));
+#else
+        return (AnalogValue)(ringbuf->sum/RING_BUF_LEN);
+#endif
+    }
+#endif
     uint32_t avg = 0;
     for (int i = 0; i < RING_BUF_LEN; i++)
     {

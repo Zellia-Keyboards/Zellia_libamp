@@ -91,7 +91,7 @@ TEST(Packet, SetPacketRGBConfigs)
     packet_process((uint8_t*)&packet,sizeof(packet));
 
     uint16_t key_index;
-    key_index = g_rgb_mapping[3];
+    key_index = g_rgb_inverse_mapping[3];
     ColorHSV hsv;
     ColorRGB rgb;
     rgb.r = 255;
@@ -103,7 +103,7 @@ TEST(Packet, SetPacketRGBConfigs)
     EXPECT_EQ(g_rgb_configs[key_index].mode, RGB_MODE_LINEAR);
     EXPECT_FLOAT_EQ(g_rgb_configs[key_index].speed, 0.01);
 
-    key_index = g_rgb_mapping[5];
+    key_index = g_rgb_inverse_mapping[5];
     rgb.r = 0;
     rgb.g = 255;
     rgb.b = 0;
@@ -150,8 +150,8 @@ TEST(Packet, SetPacketDynamicKey)
     packet->index = 1,
     memcpy(packet->dynamic_key,&dynamic_key,sizeof(DynamicKeyStroke4x4Normalized));
     packet_process((uint8_t*)packet,sizeof(packet));
-    EXPECT_EQ(g_keyboard_dynamic_keys[1].type, DYNAMIC_KEY_STROKE);
-    EXPECT_FLOAT_EQ(g_keyboard_dynamic_keys[1].dks.press_fully_distance, A_ANIT_NORM(dynamic_key.press_fully_distance));
+    EXPECT_EQ(g_dynamic_keys[1].type, DYNAMIC_KEY_STROKE);
+    EXPECT_FLOAT_EQ(g_dynamic_keys[1].dks.press_fully_distance, A_ANIT_NORM(dynamic_key.press_fully_distance));
 
     memset(buffer, 0, sizeof(buffer));
     packet->code = PACKET_CODE_SET;
@@ -159,6 +159,6 @@ TEST(Packet, SetPacketDynamicKey)
     packet->index = 0,
     memcpy(packet->dynamic_key,&dynamic_key1,sizeof(DynamicKey));
     packet_process((uint8_t*)packet,sizeof(packet));
-    EXPECT_EQ(g_keyboard_dynamic_keys[1].type, DYNAMIC_KEY_STROKE);
-    EXPECT_TRUE(!memcmp(&g_keyboard_dynamic_keys[0], &dynamic_key1, sizeof(DynamicKey)));
+    EXPECT_EQ(g_dynamic_keys[1].type, DYNAMIC_KEY_STROKE);
+    EXPECT_TRUE(!memcmp(&g_dynamic_keys[0], &dynamic_key1, sizeof(DynamicKey)));
 }

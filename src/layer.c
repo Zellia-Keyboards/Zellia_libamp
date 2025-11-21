@@ -5,17 +5,13 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 #include "layer.h"
-#include "keycode.h"
-#include "key.h"
-#include "keyboard_def.h"
-#include "keyboard.h"
 
 #include "string.h"
 
 uint8_t g_current_layer;
 static uint16_t layer_state;
-Keycode g_keymap_cache[ADVANCED_KEY_NUM + KEY_NUM];
-bool g_keymap_lock[ADVANCED_KEY_NUM + KEY_NUM];
+__WEAK Keycode g_keymap_cache[TOTAL_KEY_NUM];
+bool g_keymap_lock[TOTAL_KEY_NUM];
 
 void layer_control(KeyboardEvent event)
 {
@@ -23,6 +19,7 @@ void layer_control(KeyboardEvent event)
     switch (event.event)
     {
     case KEYBOARD_EVENT_KEY_DOWN:
+        keyboard_key_event_down_callback((Key*)event.key);
         switch ((event.keycode >> 12) & 0x0F)
         {
         case LAYER_MOMENTARY:
@@ -106,24 +103,3 @@ Keycode layer_get_keycode(uint16_t id, int8_t layer)
     return KEY_NO_EVENT;
 }
 
-inline void layer_lock(uint16_t id)
-{
-    g_keymap_lock[id] = true;
-}
-
-inline void layer_unlock(uint16_t id)
-{
-    g_keymap_lock[id] = false;
-    g_keymap_cache[id] = layer_get_keycode(id, g_current_layer);
-}
-
-void layer_cache_refresh(void)
-{
-    for (int i = 0; i < (ADVANCED_KEY_NUM + KEY_NUM); i++)
-    {
-        if (!g_keymap_lock[i])
-        {
-            g_keymap_cache[i] = layer_get_keycode(i, g_current_layer);
-        }
-    }
-}

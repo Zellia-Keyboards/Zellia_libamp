@@ -5,7 +5,6 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 #include "rgb.h"
-#include "keyboard_def.h"
 #include "string.h"
 #include "math.h"
 #include "driver.h"
@@ -17,7 +16,12 @@
 #define MANHATTAN_DISTANCE_DIRECT(x1, y1, x2, y2) (fabsf((x1) - (x2)) + fabsf((y1) - (y2)))
 #define EUCLIDEAN_DISTANCE(m, n) sqrtf(((m)->x - (n)->x)*((m)->x - (n)->x) + ((m)->y - (n)->y)*((m)->y - (n)->y))
 
-__WEAK const uint8_t g_rgb_mapping[ADVANCED_KEY_NUM];
+#ifndef RGB_CUSTOM_INVERSE_MAPPING
+uint16_t g_rgb_inverse_mapping[TOTAL_KEY_NUM];
+#else
+__WEAK const uint16_t g_rgb_inverse_mapping[TOTAL_KEY_NUM];
+#endif
+__WEAK const uint16_t g_rgb_mapping[RGB_NUM];
 __WEAK const RGBLocation g_rgb_locations[RGB_NUM];
 
 volatile bool g_rgb_hid_mode;
@@ -38,6 +42,15 @@ void rgb_init(void)
     rgb_forward_list_init(&rgb_argument_list, RGB_Argument_List_Buffer, RGB_ARGUMENT_BUFFER_LENGTH);
 #endif
     rgb_loop_queue_init(&rgb_argument_queue, RGB_Argument_Buffer, RGB_ARGUMENT_BUFFER_LENGTH);
+#ifndef RGB_CUSTOM_INVERSE_MAPPING
+    for (int i = 0; i < RGB_NUM; i++)
+    {
+        if (g_rgb_mapping[i] < TOTAL_KEY_NUM)
+        {
+            g_rgb_inverse_mapping[g_rgb_mapping[i]] = i;
+        }
+    }
+#endif
 }
 
 #define COLOR_INTERVAL(key, low, up) (uint8_t)((key) < 0 ? (low) : ((key) > ANALOG_VALUE_MAX ? (up) : (key) * (up)))
@@ -60,10 +73,12 @@ void rgb_update(void)
     ColorHSV temp_hsv;
     ColorRGB temp_rgb;
     float intensity;
+    UNUSED(temp_hsv);
     memset(g_rgb_colors, 0, sizeof(g_rgb_colors));
     
     switch (g_rgb_base_config.mode)
     {
+#if RGB_BASE_MODE_USE_RAINBOW
     case RGB_BASE_MODE_RAINBOW:
         {
             rgb_to_hsv(&temp_hsv, &g_rgb_base_config.rgb);
@@ -74,12 +89,14 @@ void rgb_update(void)
             {
                 const RGBLocation* location = &g_rgb_locations[i];
                 float vertical_distance = location->x * direction_cos + location->y * direction_sin;
-                temp_hsv.h = ((uint32_t)(g_rgb_base_config.hsv.h + vertical_distance * g_rgb_base_config.density + g_keyboard_tick * g_rgb_base_config.speed)) % 360;
+                temp_hsv.h = ((uint32_t)(g_rgb_base_config.hsv.h + vertical_distance * g_rgb_base_config.density + KEYBOARD_TICK_TO_TIME(g_keyboard_tick) * g_rgb_base_config.speed)) % 360;
                 color_set_hsv(&temp_rgb, &temp_hsv);
                 color_mix(&g_rgb_colors[i], &temp_rgb);
             }
         }
         break;
+#endif
+#if RGB_BASE_MODE_USE_WAVE
     case RGB_BASE_MODE_WAVE:
         {
             float direction_c = g_rgb_base_config.direction * M_PI / 180;
@@ -89,7 +106,7 @@ void rgb_update(void)
             {
                 const RGBLocation* location = &g_rgb_locations[i];
                 float vertical_distance = location->x * direction_cos + location->y * direction_sin;
-                float intensity = fmodf(((vertical_distance * g_rgb_base_config.density + g_keyboard_tick * g_rgb_base_config.speed)  / 180), 2.0f);
+                float intensity = fmodf(((vertical_distance * g_rgb_base_config.density + KEYBOARD_TICK_TO_TIME(g_keyboard_tick) * g_rgb_base_config.speed)  / 180), 2.0f);
                 intensity -= 1.0f;
                 float secondary_intensity;
                 if (intensity<0)
@@ -104,6 +121,7 @@ void rgb_update(void)
             }
         }
         break;
+#endif
     default:
         break;
     }
@@ -115,10 +133,9 @@ void rgb_update(void)
         rgb_forward_list_insert_after(&rgb_argument_list,&rgb_argument_list.data[rgb_argument_list.head], *item);
         rgb_loop_queue_pop(&rgb_argument_queue);
     }
-    RGBArgumentListNode * last_node = &rgb_argument_list.data[rgb_argument_list.head];
-    for (int16_t iterator = rgb_argument_list.data[rgb_argument_list.head].next; iterator >= 0;)
+    for (int16_t* iterator_ptr = &rgb_argument_list.data[rgb_argument_list.head].next; *iterator_ptr >= 0;)
     {
-        RGBArgumentListNode* node = &(rgb_argument_list.data[iterator]);
+        RGBArgumentListNode* node = &(rgb_argument_list.data[*iterator_ptr]);
         RGBArgument * item = &(node->data);
 #else
     rgb_loop_queue_foreach(&rgb_argument_queue, RGBLoopQueueElm, item)
@@ -126,7 +143,7 @@ void rgb_update(void)
 #endif
         RGBConfig *config = g_rgb_configs + item->rgb_ptr;
         RGBLocation *location = (RGBLocation *)&g_rgb_locations[item->rgb_ptr];
-        uint32_t duration = g_keyboard_tick - item->begin_time;
+        uint32_t duration = KEYBOARD_TICK_TO_TIME(g_keyboard_tick - item->begin_tick);
         float distance = duration * config->speed;
 #ifndef RGB_USE_LIST_EXPERIMENTAL
         if (duration > RGB_MAX_DURATION)
@@ -141,8 +158,10 @@ void rgb_update(void)
         // if (distance > 25)
         {
 #ifdef RGB_USE_LIST_EXPERIMENTAL
-            rgb_forward_list_erase_after(&rgb_argument_list, last_node);
-            iterator = last_node->next;
+            int16_t free_node = *iterator_ptr;
+            *iterator_ptr = node->next;
+            node->next = (&rgb_argument_list)->free_node;
+            (&rgb_argument_list)->free_node = free_node;
 #endif
             continue;
         }
@@ -167,11 +186,14 @@ void rgb_update(void)
             {
                 switch (config->mode)
                 {
+#if RGB_MODE_USE_STRING
                 case RGB_MODE_STRING:
                     intensity = (1.0f - fabsf(distance - fabsf(location->x - g_rgb_locations[j].x)));
                     intensity = intensity > 0 ? intensity : 0;
                     intensity = fabsf(location->y - g_rgb_locations[j].y) < 0.5 ? intensity : 0;
                     break;
+#endif
+#if RGB_MODE_USE_FADING_STRING
                 case RGB_MODE_FADING_STRING:
                     intensity = (distance - fabsf(location->x - g_rgb_locations[j].x));
                     if (intensity > 0)
@@ -185,12 +207,16 @@ void rgb_update(void)
                     }
                     intensity = fabsf(location->y - g_rgb_locations[j].y) < 0.5 ? intensity : 0;
                     break;
+#endif
+#if RGB_MODE_USE_DIAMOND_RIPPLE
                 case RGB_MODE_DIAMOND_RIPPLE:
-                    intensity = (1.0f - fabsf(distance - MANHATTAN_DISTANCE(location, g_rgb_locations + j)));
+                    intensity = (1.0f - fabsf(distance - MANHATTAN_DISTANCE(location, &g_rgb_locations[j])));
                     intensity = intensity > 0 ? intensity : 0;
                     break;
+#endif
+#if RGB_MODE_USE_FADING_DIAMOND_RIPPLE
                 case RGB_MODE_FADING_DIAMOND_RIPPLE:
-                    intensity = (distance - MANHATTAN_DISTANCE(location, g_rgb_locations + j));
+                    intensity = (distance - MANHATTAN_DISTANCE(location, &g_rgb_locations[j]));
                     if (intensity > 0)
                     {
                         intensity = FADING_DISTANCE - intensity > 0 ? FADING_DISTANCE - intensity : 0;
@@ -202,9 +228,11 @@ void rgb_update(void)
                         intensity = 1.0f + intensity > 0 ? 1.0f + intensity : 0;
                     }
                     break;
+#endif
+#if RGB_MODE_USE_BUBBLE
                 case RGB_MODE_BUBBLE:
                     {
-                        float e_distance = EUCLIDEAN_DISTANCE(location, g_rgb_locations + j);
+                        float e_distance = EUCLIDEAN_DISTANCE(location, &g_rgb_locations[j]);
                         if (e_distance > BUBBLE_DISTANCE)
                         {
                             intensity = 0;
@@ -223,6 +251,7 @@ void rgb_update(void)
                         }
                     }
                     break;
+#endif
                 default:
                     intensity = 0;
                     break;
@@ -239,50 +268,71 @@ void rgb_update(void)
             break;
         }
 #ifdef RGB_USE_LIST_EXPERIMENTAL
-        last_node = node;
-        iterator = (&rgb_argument_list)->data[iterator].next;
+        iterator_ptr = &(&rgb_argument_list)->data[*iterator_ptr].next;
 #endif
     }
-    for (uint8_t i = 0; i < ADVANCED_KEY_NUM; i++)
+    for (uint16_t i = 0; i < RGB_NUM; i++)
     {
-        uint8_t rgb_index = g_rgb_mapping[g_keyboard_advanced_keys[i].key.id];
-        intensity = advanced_key_get_effective_value(&g_keyboard_advanced_keys[i]);
-        switch (g_rgb_configs[rgb_index].mode)
+        bool report_state = false;
+        Color* target_color = &g_rgb_colors[i];
+        RGBConfig* rgb_config = &g_rgb_configs[i];
+        Key* key = keyboard_get_key(g_rgb_mapping[i]);
+        if (key != NULL)
         {
+            intensity = keyboard_get_key_effective_analog_value(key);
+            report_state = key->report_state;
+        }
+        else
+        {
+            intensity = 0.0f;
+            report_state = false;
+        }
+        UNUSED(report_state);
+        switch (rgb_config->mode)
+        {
+#if RGB_MODE_USE_LINEAR
         case RGB_MODE_LINEAR:
-            temp_rgb.r = COLOR_INTERVAL(intensity, 0, (float)(g_rgb_configs[rgb_index].rgb.r));
-            temp_rgb.g = COLOR_INTERVAL(intensity, 0, (float)(g_rgb_configs[rgb_index].rgb.g));
-            temp_rgb.b = COLOR_INTERVAL(intensity, 0, (float)(g_rgb_configs[rgb_index].rgb.b));
-            color_mix(&g_rgb_colors[rgb_index], &temp_rgb);
+            temp_rgb.r = COLOR_INTERVAL(intensity, 0, (float)(rgb_config->rgb.r));
+            temp_rgb.g = COLOR_INTERVAL(intensity, 0, (float)(rgb_config->rgb.g));
+            temp_rgb.b = COLOR_INTERVAL(intensity, 0, (float)(rgb_config->rgb.b));
+            color_mix(target_color, &temp_rgb);
             break;
+#endif
+#if RGB_MODE_USE_TRIGGER
         case RGB_MODE_TRIGGER:
-            if (g_keyboard_advanced_keys[i].key.report_state)
+            if (report_state)
             {
-                g_rgb_configs[rgb_index].begin_time = g_keyboard_tick;
+                rgb_config->begin_tick = g_keyboard_tick;
             }
-            intensity = powf(1 - g_rgb_configs[rgb_index].speed, g_keyboard_tick - g_rgb_configs[rgb_index].begin_time);
-            temp_rgb.r = (uint8_t)((float)(g_rgb_configs[rgb_index].rgb.r) * intensity);
-            temp_rgb.g = (uint8_t)((float)(g_rgb_configs[rgb_index].rgb.g) * intensity);
-            temp_rgb.b = (uint8_t)((float)(g_rgb_configs[rgb_index].rgb.b) * intensity);
-            color_mix(&g_rgb_colors[rgb_index], &temp_rgb);
+            intensity = powf(1 - rgb_config->speed, KEYBOARD_TICK_TO_TIME(g_keyboard_tick - rgb_config->begin_tick));
+            temp_rgb.r = (uint8_t)((float)(rgb_config->rgb.r) * intensity);
+            temp_rgb.g = (uint8_t)((float)(rgb_config->rgb.g) * intensity);
+            temp_rgb.b = (uint8_t)((float)(rgb_config->rgb.b) * intensity);
+            color_mix(target_color, &temp_rgb);
             break;
+#endif
         case RGB_MODE_FIXED:
-            color_set_rgb(&g_rgb_colors[rgb_index], &g_rgb_configs[rgb_index].rgb);
+            color_set_rgb(target_color, &rgb_config->rgb);
             break;
+#if RGB_MODE_USE_STATIC
         case RGB_MODE_STATIC:
-            color_mix(&g_rgb_colors[rgb_index], &g_rgb_configs[rgb_index].rgb);
+            color_mix(target_color, &rgb_config->rgb);
             break;
+#endif
+#if RGB_MODE_USE_CYCLE
         case RGB_MODE_CYCLE:
-            temp_hsv.s = g_rgb_configs[rgb_index].hsv.s;
-            temp_hsv.v = g_rgb_configs[rgb_index].hsv.v;
-            temp_hsv.h = (uint16_t)(g_rgb_configs[rgb_index].hsv.h + (g_keyboard_tick % (uint16_t)(360 / g_rgb_configs[rgb_index].speed)) * g_rgb_configs[rgb_index].speed) % 360;
+            temp_hsv.s = rgb_config->hsv.s;
+            temp_hsv.v = rgb_config->hsv.v;
+            temp_hsv.h = (uint16_t)(rgb_config->hsv.h + (KEYBOARD_TICK_TO_TIME(g_keyboard_tick) % (uint16_t)(360 / rgb_config->speed)) * rgb_config->speed) % 360;
             color_set_hsv(&temp_rgb, &temp_hsv);
-            color_mix(&g_rgb_colors[rgb_index], &temp_rgb);
+            color_mix(target_color, &temp_rgb);
             break;
+#endif
+#if RGB_MODE_USE_JELLY
         case RGB_MODE_JELLY:
-            for (int8_t j = 0; j < ADVANCED_KEY_NUM; j++)
+            for (int8_t j = 0; j < RGB_NUM; j++)
             {
-                intensity = (JELLY_DISTANCE * advanced_key_get_effective_value(&g_keyboard_advanced_keys[i]) - MANHATTAN_DISTANCE(&g_rgb_locations[j], &g_rgb_locations[rgb_index]));
+                intensity = (JELLY_DISTANCE * intensity) - MANHATTAN_DISTANCE(&g_rgb_locations[j], &g_rgb_locations[i]);
                 intensity = intensity > 0 ? intensity > 1 ? 1 : intensity : 0;
 
                 temp_rgb.r = ((uint8_t)(intensity * ((float)(g_rgb_configs[j].rgb.r)))) >> 1;
@@ -291,6 +341,7 @@ void rgb_update(void)
                 color_mix(&g_rgb_colors[j], &temp_rgb);
             }
             break;
+#endif
         default:
             break;
         }
@@ -321,12 +372,12 @@ void rgb_init_flash(void)
 {
     float intensity;
     ColorRGB temp_rgb;
-    uint32_t begin_time = g_keyboard_tick;
+    uint32_t begin_tick = g_keyboard_tick;
     RGBLocation location = PORT_LOCATION;
     bool animation_playing = false;
-    while (g_keyboard_tick - begin_time < RGB_FLASH_MAX_DURATION)
+    while (KEYBOARD_TICK_TO_TIME(g_keyboard_tick - begin_tick) < RGB_FLASH_MAX_DURATION)
     {
-        float distance = (g_keyboard_tick - begin_time) * RGB_FLASH_RIPPLE_SPEED;
+        float distance = KEYBOARD_TICK_TO_TIME(g_keyboard_tick - begin_tick) * RGB_FLASH_RIPPLE_SPEED;
         memset(g_rgb_colors, 0, sizeof(g_rgb_colors));
         animation_playing = false;
         for (int8_t i = 0; i < RGB_NUM; i++)
@@ -437,8 +488,8 @@ void rgb_activate(uint16_t id)
         return;
     }
     RGBArgument a;
-    a.rgb_ptr = g_rgb_mapping[id];
-    a.begin_time = g_keyboard_tick;
+    a.rgb_ptr = g_rgb_inverse_mapping[id];
+    a.begin_tick = g_keyboard_tick;
     switch (g_rgb_configs[a.rgb_ptr].mode)
     {
     case RGB_MODE_STRING:

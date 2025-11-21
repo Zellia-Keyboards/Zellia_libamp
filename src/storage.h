@@ -7,11 +7,10 @@
 #ifndef STORAGE_H_
 #define STORAGE_H_
 
-#include "stdint.h"
-#include "keyboard_def.h"
-#include "advanced_key.h"
+#include "keyboard.h"
+#ifdef DYNAMICKEY_ENABLE
 #include "dynamic_key.h"
-#include "keycode.h"
+#endif
 
 #include "lfs.h"
 
@@ -49,8 +48,9 @@ typedef struct __DynamicKeyStroke4x4Normalized
     float press_fully_distance;
     float release_begin_distance;
     float release_fully_distance;
+    uint16_t key_id;
     float value;
-    uint32_t key_end_time[4];
+    uint32_t key_end_tick[4];
     uint8_t key_state;
 } DynamicKeyStroke4x4Normalized;
 
@@ -62,8 +62,10 @@ lfs_t * storage_get_lfs(void);
 
 void advanced_key_config_normalize(AdvancedKeyConfigurationNormalized* buffer, const AdvancedKeyConfiguration* config);
 void advanced_key_config_anti_normalize(AdvancedKeyConfiguration* config, const AdvancedKeyConfigurationNormalized* buffer);
+#ifdef DYNAMICKEY_ENABLE
 void dynamic_key_stroke_normalize(DynamicKeyStroke4x4Normalized* buffer, DynamicKeyStroke4x4* dks);
 void dynamic_key_stroke_anti_normalize(DynamicKeyStroke4x4* dks, DynamicKeyStroke4x4Normalized* buffer);
+#endif
 
 int storage_mount(void);
 void storage_unmount(void);

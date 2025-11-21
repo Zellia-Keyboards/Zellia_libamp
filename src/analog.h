@@ -6,7 +6,7 @@
  */
 #ifndef ANALOG_H_
 #define ANALOG_H_
-#include "keyboard.h"
+
 #include "filter.h"
 
 #ifdef __cplusplus
@@ -29,11 +29,15 @@ extern "C" {
 
 #define ANALOG_NO_MAP    0xFFFF
 
-typedef struct
+typedef struct __RingBuf
 {
     uint16_t datas[RING_BUF_LEN];
     uint16_t pointer;
-}RingBuf;
+#ifdef OPTIMIZE_MOVING_AVERAGE_FOR_RINGBUF
+    uint32_t sum;
+    bool dirty;
+#endif
+} RingBuf;
 
 extern AdaptiveSchimidtFilter g_analog_filters[ADVANCED_KEY_NUM];
 

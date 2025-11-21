@@ -13,7 +13,7 @@ uint8_t keyboard_send_buffer[64];
 uint8_t raw_send_buffer[64];
 uint8_t midi_send_buffer[64];
 
-const Keycode g_default_keymap[LAYER_NUM][ADVANCED_KEY_NUM + KEY_NUM] = {
+const Keycode g_default_keymap[LAYER_NUM][TOTAL_KEY_NUM] = {
     {
         KEY_ESC/*0*/,           KEY_1/*1*/,     KEY_2/*2*/,     KEY_3/*3*/,     KEY_4/*4*/,     KEY_5/*5*/,     KEY_6/*6*/,     KEY_7/*7*/,     KEY_8/*8*/,     KEY_9/*9*/,     KEY_0/*10*/,        KEY_MINUS/*11*/,        KEY_EQUAL/*12*/,        KEY_BACKSPACE/*13*/,
         KEY_TAB/*14*/,          KEY_Q/*15*/,    KEY_W/*16*/,    KEY_E/*17*/,    KEY_R/*18*/,    KEY_T/*19*/,    KEY_Y/*20*/,    KEY_U/*21*/,    KEY_I/*22*/,    KEY_O/*23*/,    KEY_P/*24*/,        KEY_LEFT_BRACE/*25*/,   KEY_RIGHT_BRACE/*26*/,  KEY_BACKSLASH/*27*/,
@@ -38,11 +38,20 @@ const Keycode g_default_keymap[LAYER_NUM][ADVANCED_KEY_NUM + KEY_NUM] = {
 
 };
 
-const uint8_t g_rgb_mapping[ADVANCED_KEY_NUM] = {50,51,52,53,54,55,56,57,58,59,60,61,62,63,
+const uint16_t g_rgb_mapping[RGB_NUM] = {   
+    55, 56, 57, 58, 59, 60, 61, 62, 63, 
+    41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 
+    28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 
+    14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 
+    0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13
+};
+#if 1
+const uint16_t g_rgb_inverse_mapping[TOTAL_KEY_NUM] = {50,51,52,53,54,55,56,57,58,59,60,61,62,63,
                                                 36,37,38,39,40,41,42,43,44,45,46,47,48,49,
                                                 23,24,25,26,27,28,29,30,31,32,33,34,35,
                                                 9,10,11,12,13,14,15,16,17,18,19,20,21,22,
                                                 0,1,2,3,4,5,6,7,8};
+#endif
 const RGBLocation g_rgb_locations[RGB_NUM]={{0.625,0},{1.875,0},{3.125,0},{6.875,0},{10.5,0},{11.5,0},{12.5,0},{13.5,0},{14.5,0},
                                              {1,1},{2.5,1},{3.5,1},{4.5,1},{5.5,1},{6.5,1},{7.5,1},{8.5,1},{9.5,1},{10.5,1},{11.5,1},{12.5,1},{13.5,1},{14.5,1},
                                              {0.875,2},{2.25,2},{3.25,2},{4.25,2},{5.25,2},{6.25,2},{7.25,2},{8.25,2},{9.25,2},{10.25,2},{11.25,2},{12.25,2},{13.875,2},
@@ -50,74 +59,6 @@ const RGBLocation g_rgb_locations[RGB_NUM]={{0.625,0},{1.875,0},{3.125,0},{6.875
                                              {0.5,4},{1.5,4},{2.5,4},{3.5,4},{4.5,4},{5.5,4},{6.5,4},{7.5,4},{8.5,4},{9.5,4},{10.5,4},{11.5,4},{12.5,4},{14,4}};
 
 volatile uint8_t low_latency_mode = 0;
-
-AdvancedKey g_keyboard_advanced_keys[ADVANCED_KEY_NUM] =
-{
-    {.key.id = 0},
-    {.key.id = 1},
-    {.key.id = 2},
-    {.key.id = 3},
-    {.key.id = 4},
-    {.key.id = 5},
-    {.key.id = 6},
-    {.key.id = 7},
-    {.key.id = 8},
-    {.key.id = 9},
-    {.key.id = 10},
-    {.key.id = 11},
-    {.key.id = 12},
-    {.key.id = 13},
-    {.key.id = 14},
-    {.key.id = 15},
-    {.key.id = 16},
-    {.key.id = 17},
-    {.key.id = 18},
-    {.key.id = 19},
-    {.key.id = 20},
-    {.key.id = 21},
-    {.key.id = 22},
-    {.key.id = 23},
-    {.key.id = 24},
-    {.key.id = 25},
-    {.key.id = 26},
-    {.key.id = 27},
-    {.key.id = 28},
-    {.key.id = 29},
-    {.key.id = 30},
-    {.key.id = 31},
-    {.key.id = 32},
-    {.key.id = 33},
-    {.key.id = 34},
-    {.key.id = 35},
-    {.key.id = 36},
-    {.key.id = 37},
-    {.key.id = 38},
-    {.key.id = 39},
-    {.key.id = 40},
-    {.key.id = 41},
-    {.key.id = 42},
-    {.key.id = 43},
-    {.key.id = 44},
-    {.key.id = 45},
-    {.key.id = 46},
-    {.key.id = 47},
-    {.key.id = 48},
-    {.key.id = 49},
-    {.key.id = 50},
-    {.key.id = 51},
-    {.key.id = 52},
-    {.key.id = 53},
-    {.key.id = 54},
-    {.key.id = 55},
-    {.key.id = 56},
-    {.key.id = 57},
-    {.key.id = 58},
-    {.key.id = 59},
-    {.key.id = 60},
-    {.key.id = 61},
-    {.key.id = 62},
-    {.key.id = 63},
-};
 
 const uint16_t g_analog_map[ADVANCED_KEY_NUM] =
 {

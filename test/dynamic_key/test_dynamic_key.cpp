@@ -11,18 +11,8 @@ extern "C" void _dynamic_key_add_buffer(KeyboardEvent event, DynamicKey*dynamic_
 
 #include "layer.h"
 
-void dk_advanced_key_update(AdvancedKey* advanced_key, AnalogValue value)
-{
-    keyboard_event_handler(MK_EVENT(layer_cache_get_keycode(advanced_key->key.id), 
-                                                advanced_key_update(advanced_key, value) ? 
-                                               advanced_key->key.state ? KEYBOARD_EVENT_KEY_DOWN : KEYBOARD_EVENT_KEY_UP
-                                               : advanced_key->key.state ? KEYBOARD_EVENT_KEY_TRUE : KEYBOARD_EVENT_KEY_FALSE ,
-                                                advanced_key));
-}
-
 TEST(DynamicKey, ModTap)
 {
-    static AdvancedKey advanced_key;
     static DynamicKey dynamic_key = 
     {
         .mt = 
@@ -32,58 +22,50 @@ TEST(DynamicKey, ModTap)
             .duration = 100,
         }
     };
-    advanced_key.key.state = true;
-    dynamic_key_mt_event_handler(&dynamic_key, MK_EVENT(KEY_NO_EVENT, KEYBOARD_EVENT_KEY_DOWN, &advanced_key));
+    memcpy(&g_dynamic_keys[0],&dynamic_key,sizeof(DynamicKey));
+    g_keymap[0][0] = DYNAMIC_KEY | ((0) << 8);
+    g_keymap_cache[0] = g_keymap[0][0];
+
+    keyboard_advanced_key_update(&g_keyboard_advanced_keys[0], 1.0);
+    dynamic_key_process();
     keyboard_clear_buffer();
-    if (advanced_key.key.report_state)
+    if (g_keyboard_advanced_keys[0].key.report_state)
     {
-        _dynamic_key_add_buffer(MK_EVENT(KEY_NO_EVENT, KEYBOARD_EVENT_NO_EVENT, &advanced_key), &dynamic_key);
+        keyboard_add_buffer(MK_EVENT(layer_cache_get_keycode(0), KEYBOARD_EVENT_NO_EVENT, &g_keyboard_advanced_keys[0]));
     }
     keyboard_buffer_send();
     //EXPECT_TRUE(dynamic_key.mt.vkey0.report_state);
     EXPECT_EQ(keyboard_send_buffer[2], KEY_NO_EVENT);
     g_keyboard_tick += 200;
 
-    advanced_key.key.state = true;
-    dynamic_key_mt_event_handler(&dynamic_key, MK_EVENT(KEY_NO_EVENT, KEYBOARD_EVENT_KEY_TRUE, &advanced_key));
+
+    keyboard_advanced_key_update(&g_keyboard_advanced_keys[0], 1.0);
+    dynamic_key_process();
     keyboard_clear_buffer();
-    if (advanced_key.key.report_state)
-    {
-        _dynamic_key_add_buffer(MK_EVENT(KEY_NO_EVENT, KEYBOARD_EVENT_NO_EVENT, &advanced_key), &dynamic_key);
-    }
+    dynamic_key_add_buffer();
     keyboard_buffer_send();
     //EXPECT_TRUE(dynamic_key.mt.vkey1.report_state);
     EXPECT_EQ(keyboard_send_buffer[2], KEY_B);
 
-    advanced_key.key.state = false;
-    dynamic_key_mt_event_handler(&dynamic_key, MK_EVENT(KEY_NO_EVENT, KEYBOARD_EVENT_KEY_UP, &advanced_key));
+    keyboard_advanced_key_update(&g_keyboard_advanced_keys[0], 0.0);
+    dynamic_key_process();
     keyboard_clear_buffer();
-    
-    if (advanced_key.key.report_state)
-    {
-        _dynamic_key_add_buffer(MK_EVENT(KEY_NO_EVENT, KEYBOARD_EVENT_NO_EVENT, &advanced_key), &dynamic_key);
-    }
+    dynamic_key_add_buffer();
     keyboard_buffer_send();
     EXPECT_EQ(keyboard_send_buffer[2], KEY_NO_EVENT);
 
-    advanced_key.key.state = true;
-    dynamic_key_mt_event_handler(&dynamic_key, MK_EVENT(KEY_NO_EVENT, KEYBOARD_EVENT_KEY_DOWN, &advanced_key));
+    keyboard_advanced_key_update(&g_keyboard_advanced_keys[0], 1.0);
+    dynamic_key_process();
     keyboard_clear_buffer();
-    if (advanced_key.key.report_state)
-    {
-        _dynamic_key_add_buffer(MK_EVENT(KEY_NO_EVENT, KEYBOARD_EVENT_NO_EVENT, &advanced_key), &dynamic_key);
-    }
+    dynamic_key_add_buffer();
     keyboard_buffer_send();
     EXPECT_EQ(keyboard_send_buffer[2], KEY_NO_EVENT);
     g_keyboard_tick += 50;
 
-    advanced_key.key.state = false;
-    dynamic_key_mt_event_handler(&dynamic_key, MK_EVENT(KEY_NO_EVENT, KEYBOARD_EVENT_KEY_UP, &advanced_key));
+    keyboard_advanced_key_update(&g_keyboard_advanced_keys[0], 0.0);
+    dynamic_key_process();
     keyboard_clear_buffer();
-    if (advanced_key.key.report_state)
-    {
-        _dynamic_key_add_buffer(MK_EVENT(KEY_NO_EVENT, KEYBOARD_EVENT_NO_EVENT, &advanced_key), &dynamic_key);
-    }
+    dynamic_key_add_buffer();
     keyboard_buffer_send();
     //EXPECT_TRUE(dynamic_key.mt.vkey0.state);
     EXPECT_EQ(keyboard_send_buffer[2], KEY_A);
@@ -91,56 +73,49 @@ TEST(DynamicKey, ModTap)
 
 TEST(DynamicKey, ToggleKey)
 {
-    static AdvancedKey advanced_key;
     static DynamicKey dynamic_key = 
     {
         .tk = 
         {
             .type = DYNAMIC_KEY_TOGGLE_KEY,
             .key_binding = KEY_A,
+            .key_id = 0,
         }
     };
+    memcpy(&g_dynamic_keys[0],&dynamic_key,sizeof(DynamicKey));
+    g_keymap[0][0] = DYNAMIC_KEY | ((0) << 8);
+    g_keymap_cache[0] = g_keymap[0][0];
 
-    dynamic_key_tk_event_handler(&dynamic_key, MK_EVENT(KEY_NO_EVENT, KEYBOARD_EVENT_KEY_DOWN, &advanced_key));
+    keyboard_advanced_key_update(&g_keyboard_advanced_keys[0], 1.0);
+    dynamic_key_process();
     keyboard_clear_buffer();
-    if (advanced_key.key.report_state)
-    {
-        _dynamic_key_add_buffer(MK_EVENT(KEY_NO_EVENT, KEYBOARD_EVENT_NO_EVENT, &advanced_key), &dynamic_key);
-    }
+    dynamic_key_add_buffer();
     keyboard_buffer_send();
-    EXPECT_EQ(dynamic_key.tk.state, true);
-    EXPECT_EQ(advanced_key.key.report_state, true);
+    EXPECT_EQ(g_dynamic_keys[0].tk.state, true);
     EXPECT_EQ(keyboard_send_buffer[2], KEY_A);
 
-    dynamic_key_tk_event_handler(&dynamic_key, MK_EVENT(KEY_NO_EVENT, KEYBOARD_EVENT_KEY_UP, &advanced_key));
+    keyboard_advanced_key_update(&g_keyboard_advanced_keys[0], 0.0);
+    dynamic_key_process();
     keyboard_clear_buffer();
-    if (advanced_key.key.report_state)
-    {
-        _dynamic_key_add_buffer(MK_EVENT(KEY_NO_EVENT, KEYBOARD_EVENT_NO_EVENT, &advanced_key), &dynamic_key);
-    }
+    dynamic_key_add_buffer();
     keyboard_buffer_send();
-    EXPECT_EQ(dynamic_key.tk.state, true);
+    EXPECT_EQ(g_dynamic_keys[0].tk.state, true);
     EXPECT_EQ(keyboard_send_buffer[2], KEY_A);
 
-    dynamic_key_tk_event_handler(&dynamic_key, MK_EVENT(KEY_NO_EVENT, KEYBOARD_EVENT_KEY_DOWN, &advanced_key));
+    keyboard_advanced_key_update(&g_keyboard_advanced_keys[0], 1.0);
+    dynamic_key_process();
     keyboard_clear_buffer();
-    if (advanced_key.key.report_state)
-    {
-        _dynamic_key_add_buffer(MK_EVENT(KEY_NO_EVENT, KEYBOARD_EVENT_NO_EVENT, &advanced_key), &dynamic_key);
-    }
+    dynamic_key_add_buffer();
     keyboard_buffer_send();
-    EXPECT_EQ(dynamic_key.tk.state, false);
+    EXPECT_EQ(g_dynamic_keys[0].tk.state, false);
     EXPECT_EQ(keyboard_send_buffer[2], KEY_NO_EVENT);
 
-
-    dynamic_key_tk_event_handler(&dynamic_key, MK_EVENT(KEY_NO_EVENT, KEYBOARD_EVENT_KEY_UP, &advanced_key));
+    keyboard_advanced_key_update(&g_keyboard_advanced_keys[0], 0.0);
+    dynamic_key_process();
     keyboard_clear_buffer();
-    if (advanced_key.key.report_state)
-    {
-        _dynamic_key_add_buffer(MK_EVENT(KEY_NO_EVENT, KEYBOARD_EVENT_NO_EVENT, &advanced_key), &dynamic_key);
-    }
+    dynamic_key_add_buffer();
     keyboard_buffer_send();
-    EXPECT_EQ(dynamic_key.tk.state, false);
+    EXPECT_EQ(g_dynamic_keys[0].tk.state, false);
     EXPECT_EQ(keyboard_send_buffer[2], KEY_NO_EVENT);
 }
 
@@ -165,33 +140,33 @@ TEST(DynamicKey, DynamicKeyStroke)
             .release_fully_distance = A_ANIT_NORM(0.25),
         }
     };
-    memcpy(&g_keyboard_dynamic_keys[0], &dynamic_key, sizeof(DynamicKey));
-    dk_advanced_key_update(&g_keyboard_advanced_keys[0],A_ANIT_NORM(1));
-    dk_advanced_key_update(&g_keyboard_advanced_keys[0],A_ANIT_NORM(0));
+    memcpy(&g_dynamic_keys[0], &dynamic_key, sizeof(DynamicKey));
+    g_keymap[0][0] = DYNAMIC_KEY | ((0) << 8);
+    g_keymap_cache[0] = g_keymap[0][0];
+
+    keyboard_advanced_key_update(&g_keyboard_advanced_keys[0],A_ANIT_NORM(1));
+    keyboard_advanced_key_update(&g_keyboard_advanced_keys[0],A_ANIT_NORM(0));
+    dynamic_key_process();
 
     // A keep activating 
     // B deactivate
     // C deactivate
     // D keep activating
     g_keyboard_tick+=10;
-    dk_advanced_key_update(&g_keyboard_advanced_keys[0],A_ANIT_NORM(0.3));
+    keyboard_advanced_key_update(&g_keyboard_advanced_keys[0],A_ANIT_NORM(0.3));
+    dynamic_key_process();
     keyboard_clear_buffer();
-    if (g_keyboard_advanced_keys[0].key.report_state)
-    {
-        keyboard_add_buffer(MK_EVENT(layer_cache_get_keycode(g_keyboard_advanced_keys[0].key.id), KEYBOARD_EVENT_NO_EVENT, &g_keyboard_advanced_keys[0]));
-    }
+    dynamic_key_add_buffer();
     keyboard_buffer_send();
     EXPECT_EQ(keyboard_send_buffer[2], KEY_A);
     EXPECT_EQ(keyboard_send_buffer[3], KEY_D);
     EXPECT_EQ(keyboard_send_buffer[4], KEY_NO_EVENT);
 
     g_keyboard_tick+=10;
-    dk_advanced_key_update(&g_keyboard_advanced_keys[0],A_ANIT_NORM(0.4));
+    keyboard_advanced_key_update(&g_keyboard_advanced_keys[0],A_ANIT_NORM(0.4));
+    dynamic_key_process();
     keyboard_clear_buffer();
-    if (g_keyboard_advanced_keys[0].key.report_state)
-    {
-        keyboard_add_buffer(MK_EVENT(layer_cache_get_keycode(g_keyboard_advanced_keys[0].key.id), KEYBOARD_EVENT_NO_EVENT, &g_keyboard_advanced_keys[0]));
-    }
+    dynamic_key_add_buffer();
     keyboard_buffer_send();
     EXPECT_EQ(keyboard_send_buffer[2], KEY_A);
     EXPECT_EQ(keyboard_send_buffer[3], KEY_D);
@@ -202,12 +177,10 @@ TEST(DynamicKey, DynamicKeyStroke)
     // C keep activating
     // D deactivate
     g_keyboard_tick+=10;
-    dk_advanced_key_update(&g_keyboard_advanced_keys[0],A_ANIT_NORM(0.8));
+    keyboard_advanced_key_update(&g_keyboard_advanced_keys[0],A_ANIT_NORM(0.8));
+    dynamic_key_process();
     keyboard_clear_buffer();
-    if (g_keyboard_advanced_keys[0].key.report_state)
-    {
-        keyboard_add_buffer(MK_EVENT(layer_cache_get_keycode(g_keyboard_advanced_keys[0].key.id), KEYBOARD_EVENT_NO_EVENT, &g_keyboard_advanced_keys[0]));
-    }
+    dynamic_key_add_buffer();
     keyboard_buffer_send();
     EXPECT_EQ(keyboard_send_buffer[2], KEY_A);
     EXPECT_EQ(keyboard_send_buffer[3], KEY_B);
@@ -215,12 +188,10 @@ TEST(DynamicKey, DynamicKeyStroke)
     EXPECT_EQ(keyboard_send_buffer[5], KEY_NO_EVENT);
 
     g_keyboard_tick+=10;
-    dk_advanced_key_update(&g_keyboard_advanced_keys[0],A_ANIT_NORM(0.9));
+    keyboard_advanced_key_update(&g_keyboard_advanced_keys[0],A_ANIT_NORM(0.9));
+    dynamic_key_process();
     keyboard_clear_buffer();
-    if (g_keyboard_advanced_keys[0].key.report_state)
-    {
-        keyboard_add_buffer(MK_EVENT(layer_cache_get_keycode(g_keyboard_advanced_keys[0].key.id), KEYBOARD_EVENT_NO_EVENT, &g_keyboard_advanced_keys[0]));
-    }
+    dynamic_key_add_buffer();
     keyboard_buffer_send();
     EXPECT_EQ(keyboard_send_buffer[2], KEY_A);
     EXPECT_EQ(keyboard_send_buffer[3], KEY_B);
@@ -232,12 +203,10 @@ TEST(DynamicKey, DynamicKeyStroke)
     // C activate once
     // D activate once
     g_keyboard_tick+=10;
-    dk_advanced_key_update(&g_keyboard_advanced_keys[0],A_ANIT_NORM(0.6));
+    keyboard_advanced_key_update(&g_keyboard_advanced_keys[0],A_ANIT_NORM(0.6));
+    dynamic_key_process();
     keyboard_clear_buffer();
-    if (g_keyboard_advanced_keys[0].key.report_state)
-    {
-        keyboard_add_buffer(MK_EVENT(layer_cache_get_keycode(g_keyboard_advanced_keys[0].key.id), KEYBOARD_EVENT_NO_EVENT, &g_keyboard_advanced_keys[0]));
-    }
+    dynamic_key_add_buffer();
     keyboard_buffer_send();
     EXPECT_EQ(keyboard_send_buffer[2], KEY_A);
     EXPECT_EQ(keyboard_send_buffer[3], KEY_C);
@@ -245,12 +214,10 @@ TEST(DynamicKey, DynamicKeyStroke)
     EXPECT_EQ(keyboard_send_buffer[5], KEY_NO_EVENT);
 
     g_keyboard_tick+=10;
-    dk_advanced_key_update(&g_keyboard_advanced_keys[0],A_ANIT_NORM(0.5));
+    keyboard_advanced_key_update(&g_keyboard_advanced_keys[0],A_ANIT_NORM(0.5));
+    dynamic_key_process();
     keyboard_clear_buffer();
-    if (g_keyboard_advanced_keys[0].key.report_state)
-    {
-        keyboard_add_buffer(MK_EVENT(layer_cache_get_keycode(g_keyboard_advanced_keys[0].key.id), KEYBOARD_EVENT_NO_EVENT, &g_keyboard_advanced_keys[0]));
-    }
+    dynamic_key_add_buffer();
     keyboard_buffer_send();
     EXPECT_EQ(keyboard_send_buffer[2], KEY_A);
     EXPECT_EQ(keyboard_send_buffer[3], KEY_NO_EVENT);
@@ -260,23 +227,19 @@ TEST(DynamicKey, DynamicKeyStroke)
     // C keep activating 
     // D deactivate
     g_keyboard_tick+=10;
-    dk_advanced_key_update(&g_keyboard_advanced_keys[0],A_ANIT_NORM(0.2));
+    keyboard_advanced_key_update(&g_keyboard_advanced_keys[0],A_ANIT_NORM(0.2));
+    dynamic_key_process();
     keyboard_clear_buffer();
-    if (g_keyboard_advanced_keys[0].key.report_state)
-    {
-        keyboard_add_buffer(MK_EVENT(layer_cache_get_keycode(g_keyboard_advanced_keys[0].key.id), KEYBOARD_EVENT_NO_EVENT, &g_keyboard_advanced_keys[0]));
-    }
+    dynamic_key_add_buffer();
     keyboard_buffer_send();
     EXPECT_EQ(keyboard_send_buffer[2], KEY_C);
     EXPECT_EQ(keyboard_send_buffer[3], KEY_NO_EVENT);
 
     g_keyboard_tick+=10;
-    dk_advanced_key_update(&g_keyboard_advanced_keys[0],A_ANIT_NORM(0.1));
+    keyboard_advanced_key_update(&g_keyboard_advanced_keys[0],A_ANIT_NORM(0.1));
+    dynamic_key_process();
     keyboard_clear_buffer();
-    if (g_keyboard_advanced_keys[0].key.report_state)
-    {
-        keyboard_add_buffer(MK_EVENT(layer_cache_get_keycode(g_keyboard_advanced_keys[0].key.id), KEYBOARD_EVENT_NO_EVENT, &g_keyboard_advanced_keys[0]));
-    }
+    dynamic_key_add_buffer();
     keyboard_buffer_send();
     EXPECT_EQ(keyboard_send_buffer[2], KEY_C);
     EXPECT_EQ(keyboard_send_buffer[3], KEY_NO_EVENT);
@@ -284,9 +247,11 @@ TEST(DynamicKey, DynamicKeyStroke)
 
 TEST(DynamicKey, MutexDistancePriority)
 {
-    g_keymap[0][0] = DYNAMIC_KEY | (1 << 8);
-    g_keymap[0][1] = DYNAMIC_KEY | (1 << 8);
-    DynamicKey*dynamic_key = &g_keyboard_dynamic_keys[1];
+    g_keymap[0][0] = DYNAMIC_KEY | (0 << 8);
+    g_keymap[0][1] = DYNAMIC_KEY | (0 << 8);
+    g_keymap_cache[0] = g_keymap[0][0];
+    g_keymap_cache[1] = g_keymap[0][1];
+    DynamicKey*dynamic_key = &g_dynamic_keys[0];
     dynamic_key->m.type = DYNAMIC_KEY_MUTEX;
     dynamic_key->m.mode = DK_MUTEX_DISTANCE_PRIORITY;
     dynamic_key->m.key_binding[0] = KEY_A;
@@ -294,90 +259,97 @@ TEST(DynamicKey, MutexDistancePriority)
     dynamic_key->m.key_id[0] = 0;
     dynamic_key->m.key_id[1] = 1;
 
-    dk_advanced_key_update(&g_keyboard_advanced_keys[0],A_ANIT_NORM(1));
-    dk_advanced_key_update(&g_keyboard_advanced_keys[1],A_ANIT_NORM(1));
-    dk_advanced_key_update(&g_keyboard_advanced_keys[0],A_ANIT_NORM(0));
-    dk_advanced_key_update(&g_keyboard_advanced_keys[1],A_ANIT_NORM(0));
+    keyboard_advanced_key_update(&g_keyboard_advanced_keys[0],A_ANIT_NORM(1));
+    keyboard_advanced_key_update(&g_keyboard_advanced_keys[1],A_ANIT_NORM(1));
+    keyboard_advanced_key_update(&g_keyboard_advanced_keys[0],A_ANIT_NORM(0));
+    keyboard_advanced_key_update(&g_keyboard_advanced_keys[1],A_ANIT_NORM(0));
+    dynamic_key_process();
 
-    dk_advanced_key_update(&g_keyboard_advanced_keys[0],A_ANIT_NORM(0.3));
-    dk_advanced_key_update(&g_keyboard_advanced_keys[1],A_ANIT_NORM(0));
+    keyboard_advanced_key_update(&g_keyboard_advanced_keys[0],A_ANIT_NORM(0.3));
+    keyboard_advanced_key_update(&g_keyboard_advanced_keys[1],A_ANIT_NORM(0));
+    dynamic_key_process();
     keyboard_clear_buffer();
-    if (g_keyboard_advanced_keys[0].key.report_state)
-    {
-        keyboard_add_buffer(MK_EVENT(layer_cache_get_keycode(g_keyboard_advanced_keys[0].key.id), KEYBOARD_EVENT_NO_EVENT, &g_keyboard_advanced_keys[0]));
-    }
-    if (g_keyboard_advanced_keys[1].key.report_state)
-    {
-        keyboard_add_buffer(MK_EVENT(layer_cache_get_keycode(g_keyboard_advanced_keys[1].key.id), KEYBOARD_EVENT_NO_EVENT, &g_keyboard_advanced_keys[1]));
-    }
+    dynamic_key_add_buffer();
     keyboard_buffer_send();
     EXPECT_EQ(keyboard_send_buffer[2], KEY_A);
     EXPECT_EQ(keyboard_send_buffer[3], KEY_NO_EVENT);
 
 
-    dk_advanced_key_update(&g_keyboard_advanced_keys[0],A_ANIT_NORM(0.3));
-    dk_advanced_key_update(&g_keyboard_advanced_keys[1],A_ANIT_NORM(0.9));
-    dk_advanced_key_update(&g_keyboard_advanced_keys[0],A_ANIT_NORM(0.3));
-    dk_advanced_key_update(&g_keyboard_advanced_keys[1],A_ANIT_NORM(0.9));
+    keyboard_advanced_key_update(&g_keyboard_advanced_keys[0],A_ANIT_NORM(0.3));
+    keyboard_advanced_key_update(&g_keyboard_advanced_keys[1],A_ANIT_NORM(0.9));
+    keyboard_advanced_key_update(&g_keyboard_advanced_keys[0],A_ANIT_NORM(0.3));
+    keyboard_advanced_key_update(&g_keyboard_advanced_keys[1],A_ANIT_NORM(0.9));
+    dynamic_key_process();
     keyboard_clear_buffer();
-    if (g_keyboard_advanced_keys[0].key.report_state)
-    {
-        keyboard_add_buffer(MK_EVENT(layer_cache_get_keycode(g_keyboard_advanced_keys[0].key.id), KEYBOARD_EVENT_NO_EVENT, &g_keyboard_advanced_keys[0]));
-    }
-    if (g_keyboard_advanced_keys[1].key.report_state)
-    {
-        keyboard_add_buffer(MK_EVENT(layer_cache_get_keycode(g_keyboard_advanced_keys[1].key.id), KEYBOARD_EVENT_NO_EVENT, &g_keyboard_advanced_keys[1]));
-    }
+    dynamic_key_add_buffer();
     keyboard_buffer_send();
     EXPECT_EQ(keyboard_send_buffer[2], KEY_B);
     EXPECT_EQ(keyboard_send_buffer[3], KEY_NO_EVENT);
 
-    dk_advanced_key_update(&g_keyboard_advanced_keys[0],A_ANIT_NORM(1));
-    dk_advanced_key_update(&g_keyboard_advanced_keys[1],A_ANIT_NORM(0.9));
-    dk_advanced_key_update(&g_keyboard_advanced_keys[0],A_ANIT_NORM(1));
-    dk_advanced_key_update(&g_keyboard_advanced_keys[1],A_ANIT_NORM(0.9));
+    keyboard_advanced_key_update(&g_keyboard_advanced_keys[0],A_ANIT_NORM(1));
+    keyboard_advanced_key_update(&g_keyboard_advanced_keys[1],A_ANIT_NORM(0.9));
+    keyboard_advanced_key_update(&g_keyboard_advanced_keys[0],A_ANIT_NORM(1));
+    keyboard_advanced_key_update(&g_keyboard_advanced_keys[1],A_ANIT_NORM(0.9));
+    dynamic_key_process();
     keyboard_clear_buffer();
-    if (g_keyboard_advanced_keys[0].key.report_state)
-    {
-        keyboard_add_buffer(MK_EVENT(layer_cache_get_keycode(g_keyboard_advanced_keys[0].key.id), KEYBOARD_EVENT_NO_EVENT, &g_keyboard_advanced_keys[0]));
-    }
-    if (g_keyboard_advanced_keys[1].key.report_state)
-    {
-        keyboard_add_buffer(MK_EVENT(layer_cache_get_keycode(g_keyboard_advanced_keys[1].key.id), KEYBOARD_EVENT_NO_EVENT, &g_keyboard_advanced_keys[1]));
-    }
+    dynamic_key_add_buffer();
     keyboard_buffer_send();
     EXPECT_EQ(keyboard_send_buffer[2], KEY_A);
     EXPECT_EQ(keyboard_send_buffer[3], KEY_NO_EVENT);
+    
+    keyboard_advanced_key_update(&g_keyboard_advanced_keys[0],A_ANIT_NORM(0));
+    keyboard_advanced_key_update(&g_keyboard_advanced_keys[1],A_ANIT_NORM(0));
+    keyboard_advanced_key_update(&g_keyboard_advanced_keys[0],A_ANIT_NORM(1));
+    keyboard_advanced_key_update(&g_keyboard_advanced_keys[1],A_ANIT_NORM(0.9));
+    dynamic_key_process();
+    keyboard_clear_buffer();
+    dynamic_key_add_buffer();
+    keyboard_buffer_send();
+    EXPECT_EQ(keyboard_send_buffer[2], KEY_A);
+    EXPECT_EQ(keyboard_send_buffer[3], KEY_NO_EVENT);
+    EXPECT_EQ(keyboard_send_buffer[4], KEY_NO_EVENT);
+    EXPECT_EQ(keyboard_send_buffer[5], KEY_NO_EVENT);
+    EXPECT_EQ(keyboard_send_buffer[6], KEY_NO_EVENT);
+
+    keyboard_advanced_key_update(&g_keyboard_advanced_keys[0],A_ANIT_NORM(0));
+    keyboard_advanced_key_update(&g_keyboard_advanced_keys[1],A_ANIT_NORM(0));
+    keyboard_advanced_key_update(&g_keyboard_advanced_keys[0],A_ANIT_NORM(0));
+    keyboard_advanced_key_update(&g_keyboard_advanced_keys[1],A_ANIT_NORM(0));
+    dynamic_key_process();
+    keyboard_clear_buffer();
+    dynamic_key_add_buffer();
+    keyboard_buffer_send();
+    EXPECT_EQ(dynamic_key->m.key_report_state[0], false);
+    EXPECT_EQ(dynamic_key->m.key_report_state[1], false);
+    EXPECT_EQ(keyboard_send_buffer[2], KEY_NO_EVENT);
+    EXPECT_EQ(keyboard_send_buffer[3], KEY_NO_EVENT);
+    EXPECT_EQ(keyboard_send_buffer[4], KEY_NO_EVENT);
+    EXPECT_EQ(keyboard_send_buffer[5], KEY_NO_EVENT);
+    EXPECT_EQ(keyboard_send_buffer[6], KEY_NO_EVENT);
 
     dynamic_key->m.mode |= 0x80;
-    dk_advanced_key_update(&g_keyboard_advanced_keys[0],A_ANIT_NORM(0));
-    dk_advanced_key_update(&g_keyboard_advanced_keys[1],A_ANIT_NORM(0));
-    dk_advanced_key_update(&g_keyboard_advanced_keys[0],A_ANIT_NORM(1));
-    dk_advanced_key_update(&g_keyboard_advanced_keys[1],A_ANIT_NORM(0.9));
-    dk_advanced_key_update(&g_keyboard_advanced_keys[0],A_ANIT_NORM(1));
-    dk_advanced_key_update(&g_keyboard_advanced_keys[1],A_ANIT_NORM(0.9));
+    keyboard_advanced_key_update(&g_keyboard_advanced_keys[0],A_ANIT_NORM(0));
+    keyboard_advanced_key_update(&g_keyboard_advanced_keys[1],A_ANIT_NORM(0));
+    keyboard_advanced_key_update(&g_keyboard_advanced_keys[0],A_ANIT_NORM(1));
+    keyboard_advanced_key_update(&g_keyboard_advanced_keys[1],A_ANIT_NORM(0.9));
+    dynamic_key_process();
     keyboard_clear_buffer();
-    if (g_keyboard_advanced_keys[0].key.report_state)
-    {
-        keyboard_add_buffer(MK_EVENT(layer_cache_get_keycode(g_keyboard_advanced_keys[0].key.id), KEYBOARD_EVENT_NO_EVENT, &g_keyboard_advanced_keys[0]));
-    }
-    if (g_keyboard_advanced_keys[1].key.report_state)
-    {
-       keyboard_add_buffer(MK_EVENT(layer_cache_get_keycode(g_keyboard_advanced_keys[1].key.id), KEYBOARD_EVENT_NO_EVENT, &g_keyboard_advanced_keys[1]));
-    }
+    dynamic_key_add_buffer();
     keyboard_buffer_send();
     EXPECT_EQ(keyboard_send_buffer[2], KEY_A);
     EXPECT_EQ(keyboard_send_buffer[3], KEY_B);
-    EXPECT_EQ(keyboard_send_buffer[4], KEY_A);
-    EXPECT_EQ(keyboard_send_buffer[5], KEY_B);
+    EXPECT_EQ(keyboard_send_buffer[4], KEY_NO_EVENT);
+    EXPECT_EQ(keyboard_send_buffer[5], KEY_NO_EVENT);
     EXPECT_EQ(keyboard_send_buffer[6], KEY_NO_EVENT);
 }
 
 TEST(DynamicKey, MutexLastPriority)
 {
-    g_keymap[0][0] = DYNAMIC_KEY | (1 << 8);
-    g_keymap[0][1] = DYNAMIC_KEY | (1 << 8);
-    DynamicKey*dynamic_key = &g_keyboard_dynamic_keys[1];
+    g_keymap[0][0] = DYNAMIC_KEY | (0 << 8);
+    g_keymap[0][1] = DYNAMIC_KEY | (0 << 8);
+    g_keymap_cache[0] = g_keymap[0][0];
+    g_keymap_cache[1] = g_keymap[0][1];
+    DynamicKey*dynamic_key = &g_dynamic_keys[0];
     dynamic_key->m.type = DYNAMIC_KEY_MUTEX;
     dynamic_key->m.mode = DK_MUTEX_LAST_PRIORITY;
     dynamic_key->m.key_binding[0] = KEY_A;
@@ -385,62 +357,59 @@ TEST(DynamicKey, MutexLastPriority)
     dynamic_key->m.key_id[0] = 0;
     dynamic_key->m.key_id[1] = 1;
 
-    dk_advanced_key_update(&g_keyboard_advanced_keys[0],A_ANIT_NORM(1));
-    dk_advanced_key_update(&g_keyboard_advanced_keys[1],A_ANIT_NORM(1));
-    dk_advanced_key_update(&g_keyboard_advanced_keys[0],A_ANIT_NORM(0));
-    dk_advanced_key_update(&g_keyboard_advanced_keys[1],A_ANIT_NORM(0));
+    keyboard_advanced_key_update(&g_keyboard_advanced_keys[0],A_ANIT_NORM(1));
+    keyboard_advanced_key_update(&g_keyboard_advanced_keys[1],A_ANIT_NORM(1));
+    keyboard_advanced_key_update(&g_keyboard_advanced_keys[0],A_ANIT_NORM(0));
+    keyboard_advanced_key_update(&g_keyboard_advanced_keys[1],A_ANIT_NORM(0));
+    dynamic_key_process();
 
-    dk_advanced_key_update(&g_keyboard_advanced_keys[0],A_ANIT_NORM(0.6));
-    dk_advanced_key_update(&g_keyboard_advanced_keys[1],A_ANIT_NORM(0));
+    keyboard_advanced_key_update(&g_keyboard_advanced_keys[0],A_ANIT_NORM(0.6));
+    keyboard_advanced_key_update(&g_keyboard_advanced_keys[1],A_ANIT_NORM(0));
+    dynamic_key_process();
     EXPECT_TRUE(g_keyboard_advanced_keys[0].key.state);
     EXPECT_FALSE(g_keyboard_advanced_keys[1].key.state);
-    EXPECT_TRUE(g_keyboard_advanced_keys[0].key.report_state);
-    EXPECT_FALSE(g_keyboard_advanced_keys[1].key.report_state);
 
-    dk_advanced_key_update(&g_keyboard_advanced_keys[0],A_ANIT_NORM(0.6));
-    dk_advanced_key_update(&g_keyboard_advanced_keys[1],A_ANIT_NORM(0.6));
+    keyboard_advanced_key_update(&g_keyboard_advanced_keys[0],A_ANIT_NORM(0.6));
+    keyboard_advanced_key_update(&g_keyboard_advanced_keys[1],A_ANIT_NORM(0.6));
+    dynamic_key_process();
     EXPECT_TRUE(g_keyboard_advanced_keys[0].key.state);
     EXPECT_TRUE(g_keyboard_advanced_keys[1].key.state);
-    EXPECT_FALSE(g_keyboard_advanced_keys[0].key.report_state);
-    EXPECT_TRUE(g_keyboard_advanced_keys[1].key.report_state);
 
-    dk_advanced_key_update(&g_keyboard_advanced_keys[0],A_ANIT_NORM(0.3));
-    dk_advanced_key_update(&g_keyboard_advanced_keys[1],A_ANIT_NORM(0.6));
+    keyboard_advanced_key_update(&g_keyboard_advanced_keys[0],A_ANIT_NORM(0.3));
+    keyboard_advanced_key_update(&g_keyboard_advanced_keys[1],A_ANIT_NORM(0.6));
+    dynamic_key_process();
     EXPECT_FALSE(g_keyboard_advanced_keys[0].key.state);
     EXPECT_TRUE(g_keyboard_advanced_keys[1].key.state);
-    EXPECT_FALSE(g_keyboard_advanced_keys[0].key.report_state);
-    EXPECT_TRUE(g_keyboard_advanced_keys[1].key.report_state);
 
-    dk_advanced_key_update(&g_keyboard_advanced_keys[0],A_ANIT_NORM(0.6));
-    dk_advanced_key_update(&g_keyboard_advanced_keys[1],A_ANIT_NORM(0.6));
+    keyboard_advanced_key_update(&g_keyboard_advanced_keys[0],A_ANIT_NORM(0.6));
+    keyboard_advanced_key_update(&g_keyboard_advanced_keys[1],A_ANIT_NORM(0.6));
+    dynamic_key_process();
     EXPECT_TRUE(g_keyboard_advanced_keys[0].key.state);
     EXPECT_TRUE(g_keyboard_advanced_keys[1].key.state);
-    EXPECT_TRUE(g_keyboard_advanced_keys[0].key.report_state);
-    EXPECT_FALSE(g_keyboard_advanced_keys[1].key.report_state);
 
-    dk_advanced_key_update(&g_keyboard_advanced_keys[0],A_ANIT_NORM(0.9));
-    dk_advanced_key_update(&g_keyboard_advanced_keys[1],A_ANIT_NORM(0.9));
+    keyboard_advanced_key_update(&g_keyboard_advanced_keys[0],A_ANIT_NORM(0.9));
+    keyboard_advanced_key_update(&g_keyboard_advanced_keys[1],A_ANIT_NORM(0.9));
+    dynamic_key_process();
     EXPECT_TRUE(g_keyboard_advanced_keys[0].key.state);
     EXPECT_TRUE(g_keyboard_advanced_keys[1].key.state);
-    EXPECT_TRUE(g_keyboard_advanced_keys[0].key.report_state);
-    EXPECT_FALSE(g_keyboard_advanced_keys[1].key.report_state);
 
     dynamic_key->m.mode |= 0x80;
-    dk_advanced_key_update(&g_keyboard_advanced_keys[0],A_ANIT_NORM(0));
-    dk_advanced_key_update(&g_keyboard_advanced_keys[1],A_ANIT_NORM(0));
-    dk_advanced_key_update(&g_keyboard_advanced_keys[0],A_ANIT_NORM(0.9));
-    dk_advanced_key_update(&g_keyboard_advanced_keys[1],A_ANIT_NORM(0.9));
+    keyboard_advanced_key_update(&g_keyboard_advanced_keys[0],A_ANIT_NORM(0));
+    keyboard_advanced_key_update(&g_keyboard_advanced_keys[1],A_ANIT_NORM(0));
+    keyboard_advanced_key_update(&g_keyboard_advanced_keys[0],A_ANIT_NORM(0.9));
+    keyboard_advanced_key_update(&g_keyboard_advanced_keys[1],A_ANIT_NORM(0.9));
+    dynamic_key_process();
     EXPECT_TRUE(g_keyboard_advanced_keys[0].key.state);
     EXPECT_TRUE(g_keyboard_advanced_keys[1].key.state);
-    EXPECT_TRUE(g_keyboard_advanced_keys[0].key.report_state);
-    EXPECT_TRUE(g_keyboard_advanced_keys[1].key.report_state);
 }
 
 TEST(DynamicKey, MutexKey1Priority)
 {
-    g_keymap[0][0] = DYNAMIC_KEY | (1 << 8);
-    g_keymap[0][1] = DYNAMIC_KEY | (1 << 8);
-    DynamicKey*dynamic_key = &g_keyboard_dynamic_keys[1];
+    g_keymap[0][0] = DYNAMIC_KEY | (0 << 8);
+    g_keymap[0][1] = DYNAMIC_KEY | (0 << 8);
+    g_keymap_cache[0] = g_keymap[0][0];
+    g_keymap_cache[1] = g_keymap[0][1];
+    DynamicKey*dynamic_key = &g_dynamic_keys[0];
     dynamic_key->m.type = DYNAMIC_KEY_MUTEX;
     dynamic_key->m.mode = DK_MUTEX_KEY1_PRIORITY;
     dynamic_key->m.key_binding[0] = KEY_A;
@@ -448,62 +417,59 @@ TEST(DynamicKey, MutexKey1Priority)
     dynamic_key->m.key_id[0] = 0;
     dynamic_key->m.key_id[1] = 1;
 
-    dk_advanced_key_update(&g_keyboard_advanced_keys[0],A_ANIT_NORM(1));
-    dk_advanced_key_update(&g_keyboard_advanced_keys[1],A_ANIT_NORM(1));
-    dk_advanced_key_update(&g_keyboard_advanced_keys[0],A_ANIT_NORM(0));
-    dk_advanced_key_update(&g_keyboard_advanced_keys[1],A_ANIT_NORM(0));
+    keyboard_advanced_key_update(&g_keyboard_advanced_keys[0],A_ANIT_NORM(1));
+    keyboard_advanced_key_update(&g_keyboard_advanced_keys[1],A_ANIT_NORM(1));
+    keyboard_advanced_key_update(&g_keyboard_advanced_keys[0],A_ANIT_NORM(0));
+    keyboard_advanced_key_update(&g_keyboard_advanced_keys[1],A_ANIT_NORM(0));
+    dynamic_key_process();
 
-    dk_advanced_key_update(&g_keyboard_advanced_keys[0],A_ANIT_NORM(0.6));
-    dk_advanced_key_update(&g_keyboard_advanced_keys[1],A_ANIT_NORM(0));
+    keyboard_advanced_key_update(&g_keyboard_advanced_keys[0],A_ANIT_NORM(0.6));
+    keyboard_advanced_key_update(&g_keyboard_advanced_keys[1],A_ANIT_NORM(0));
+    dynamic_key_process();
     EXPECT_TRUE(g_keyboard_advanced_keys[0].key.state);
     EXPECT_FALSE(g_keyboard_advanced_keys[1].key.state);
-    EXPECT_TRUE(g_keyboard_advanced_keys[0].key.report_state);
-    EXPECT_FALSE(g_keyboard_advanced_keys[1].key.report_state);
 
-    dk_advanced_key_update(&g_keyboard_advanced_keys[0],A_ANIT_NORM(0.6));
-    dk_advanced_key_update(&g_keyboard_advanced_keys[1],A_ANIT_NORM(0.6));
+    keyboard_advanced_key_update(&g_keyboard_advanced_keys[0],A_ANIT_NORM(0.6));
+    keyboard_advanced_key_update(&g_keyboard_advanced_keys[1],A_ANIT_NORM(0.6));
+    dynamic_key_process();
     EXPECT_TRUE(g_keyboard_advanced_keys[0].key.state);
     EXPECT_TRUE(g_keyboard_advanced_keys[1].key.state);
-    EXPECT_TRUE(g_keyboard_advanced_keys[0].key.report_state);
-    EXPECT_FALSE(g_keyboard_advanced_keys[1].key.report_state);
 
-    dk_advanced_key_update(&g_keyboard_advanced_keys[0],A_ANIT_NORM(0.3));
-    dk_advanced_key_update(&g_keyboard_advanced_keys[1],A_ANIT_NORM(0.6));
+    keyboard_advanced_key_update(&g_keyboard_advanced_keys[0],A_ANIT_NORM(0.3));
+    keyboard_advanced_key_update(&g_keyboard_advanced_keys[1],A_ANIT_NORM(0.6));
+    dynamic_key_process();
     EXPECT_FALSE(g_keyboard_advanced_keys[0].key.state);
     EXPECT_TRUE(g_keyboard_advanced_keys[1].key.state);
-    EXPECT_FALSE(g_keyboard_advanced_keys[0].key.report_state);
-    EXPECT_TRUE(g_keyboard_advanced_keys[1].key.report_state);
 
-    dk_advanced_key_update(&g_keyboard_advanced_keys[0],A_ANIT_NORM(0.6));
-    dk_advanced_key_update(&g_keyboard_advanced_keys[1],A_ANIT_NORM(0.6));
+    keyboard_advanced_key_update(&g_keyboard_advanced_keys[0],A_ANIT_NORM(0.6));
+    keyboard_advanced_key_update(&g_keyboard_advanced_keys[1],A_ANIT_NORM(0.6));
+    dynamic_key_process();
     EXPECT_TRUE(g_keyboard_advanced_keys[0].key.state);
     EXPECT_TRUE(g_keyboard_advanced_keys[1].key.state);
-    EXPECT_TRUE(g_keyboard_advanced_keys[0].key.report_state);
-    EXPECT_FALSE(g_keyboard_advanced_keys[1].key.report_state);
 
-    dk_advanced_key_update(&g_keyboard_advanced_keys[0],A_ANIT_NORM(0.9));
-    dk_advanced_key_update(&g_keyboard_advanced_keys[1],A_ANIT_NORM(0.9));
+    keyboard_advanced_key_update(&g_keyboard_advanced_keys[0],A_ANIT_NORM(0.9));
+    keyboard_advanced_key_update(&g_keyboard_advanced_keys[1],A_ANIT_NORM(0.9));
+    dynamic_key_process();
     EXPECT_TRUE(g_keyboard_advanced_keys[0].key.state);
     EXPECT_TRUE(g_keyboard_advanced_keys[1].key.state);
-    EXPECT_TRUE(g_keyboard_advanced_keys[0].key.report_state);
-    EXPECT_FALSE(g_keyboard_advanced_keys[1].key.report_state);
 
     dynamic_key->m.mode |= 0x80;
-    dk_advanced_key_update(&g_keyboard_advanced_keys[0],A_ANIT_NORM(0));
-    dk_advanced_key_update(&g_keyboard_advanced_keys[1],A_ANIT_NORM(0));
-    dk_advanced_key_update(&g_keyboard_advanced_keys[0],A_ANIT_NORM(0.9));
-    dk_advanced_key_update(&g_keyboard_advanced_keys[1],A_ANIT_NORM(0.9));
+    keyboard_advanced_key_update(&g_keyboard_advanced_keys[0],A_ANIT_NORM(0));
+    keyboard_advanced_key_update(&g_keyboard_advanced_keys[1],A_ANIT_NORM(0));
+    keyboard_advanced_key_update(&g_keyboard_advanced_keys[0],A_ANIT_NORM(0.9));
+    keyboard_advanced_key_update(&g_keyboard_advanced_keys[1],A_ANIT_NORM(0.9));
+    dynamic_key_process();
     EXPECT_TRUE(g_keyboard_advanced_keys[0].key.state);
     EXPECT_TRUE(g_keyboard_advanced_keys[1].key.state);
-    EXPECT_TRUE(g_keyboard_advanced_keys[0].key.report_state);
-    EXPECT_TRUE(g_keyboard_advanced_keys[1].key.report_state);
 }
 
 TEST(DynamicKey, MutexKey2Priority)
 {
-    g_keymap[0][0] = DYNAMIC_KEY | (1 << 8);
-    g_keymap[0][1] = DYNAMIC_KEY | (1 << 8);
-    DynamicKey*dynamic_key = &g_keyboard_dynamic_keys[1];
+    g_keymap[0][0] = DYNAMIC_KEY | (0 << 8);
+    g_keymap[0][1] = DYNAMIC_KEY | (0 << 8);
+    g_keymap_cache[0] = g_keymap[0][0];
+    g_keymap_cache[1] = g_keymap[0][1];
+    DynamicKey*dynamic_key = &g_dynamic_keys[0];
     dynamic_key->m.type = DYNAMIC_KEY_MUTEX;
     dynamic_key->m.mode = DK_MUTEX_KEY2_PRIORITY;
     dynamic_key->m.key_binding[0] = KEY_A;
@@ -511,63 +477,60 @@ TEST(DynamicKey, MutexKey2Priority)
     dynamic_key->m.key_id[0] = 0;
     dynamic_key->m.key_id[1] = 1;
 
-    dk_advanced_key_update(&g_keyboard_advanced_keys[0],A_ANIT_NORM(1));
-    dk_advanced_key_update(&g_keyboard_advanced_keys[1],A_ANIT_NORM(1));
-    dk_advanced_key_update(&g_keyboard_advanced_keys[0],A_ANIT_NORM(0));
-    dk_advanced_key_update(&g_keyboard_advanced_keys[1],A_ANIT_NORM(0));
+    keyboard_advanced_key_update(&g_keyboard_advanced_keys[0],A_ANIT_NORM(1));
+    keyboard_advanced_key_update(&g_keyboard_advanced_keys[1],A_ANIT_NORM(1));
+    keyboard_advanced_key_update(&g_keyboard_advanced_keys[0],A_ANIT_NORM(0));
+    keyboard_advanced_key_update(&g_keyboard_advanced_keys[1],A_ANIT_NORM(0));
+    dynamic_key_process();
 
-    dk_advanced_key_update(&g_keyboard_advanced_keys[0],A_ANIT_NORM(0.6));
-    dk_advanced_key_update(&g_keyboard_advanced_keys[1],A_ANIT_NORM(0));
+    keyboard_advanced_key_update(&g_keyboard_advanced_keys[0],A_ANIT_NORM(0.6));
+    keyboard_advanced_key_update(&g_keyboard_advanced_keys[1],A_ANIT_NORM(0));
+    dynamic_key_process();
     EXPECT_TRUE(g_keyboard_advanced_keys[0].key.state);
     EXPECT_FALSE(g_keyboard_advanced_keys[1].key.state);
-    EXPECT_TRUE(g_keyboard_advanced_keys[0].key.report_state);
-    EXPECT_FALSE(g_keyboard_advanced_keys[1].key.report_state);
 
-    dk_advanced_key_update(&g_keyboard_advanced_keys[0],A_ANIT_NORM(0.6));
-    dk_advanced_key_update(&g_keyboard_advanced_keys[1],A_ANIT_NORM(0.6));
+    keyboard_advanced_key_update(&g_keyboard_advanced_keys[0],A_ANIT_NORM(0.6));
+    keyboard_advanced_key_update(&g_keyboard_advanced_keys[1],A_ANIT_NORM(0.6));
+    dynamic_key_process();
     EXPECT_TRUE(g_keyboard_advanced_keys[0].key.state);
     EXPECT_TRUE(g_keyboard_advanced_keys[1].key.state);
-    EXPECT_FALSE(g_keyboard_advanced_keys[0].key.report_state);
-    EXPECT_TRUE(g_keyboard_advanced_keys[1].key.report_state);
 
-    dk_advanced_key_update(&g_keyboard_advanced_keys[0],A_ANIT_NORM(0.3));
-    dk_advanced_key_update(&g_keyboard_advanced_keys[1],A_ANIT_NORM(0.6));
+    keyboard_advanced_key_update(&g_keyboard_advanced_keys[0],A_ANIT_NORM(0.3));
+    keyboard_advanced_key_update(&g_keyboard_advanced_keys[1],A_ANIT_NORM(0.6));
+    dynamic_key_process();
     EXPECT_FALSE(g_keyboard_advanced_keys[0].key.state);
     EXPECT_TRUE(g_keyboard_advanced_keys[1].key.state);
-    EXPECT_FALSE(g_keyboard_advanced_keys[0].key.report_state);
-    EXPECT_TRUE(g_keyboard_advanced_keys[1].key.report_state);
 
-    dk_advanced_key_update(&g_keyboard_advanced_keys[0],A_ANIT_NORM(0.6));
-    dk_advanced_key_update(&g_keyboard_advanced_keys[1],A_ANIT_NORM(0.6));
+    keyboard_advanced_key_update(&g_keyboard_advanced_keys[0],A_ANIT_NORM(0.6));
+    keyboard_advanced_key_update(&g_keyboard_advanced_keys[1],A_ANIT_NORM(0.6));
+    dynamic_key_process();
     EXPECT_TRUE(g_keyboard_advanced_keys[0].key.state);
     EXPECT_TRUE(g_keyboard_advanced_keys[1].key.state);
-    EXPECT_FALSE(g_keyboard_advanced_keys[0].key.report_state);
-    EXPECT_TRUE(g_keyboard_advanced_keys[1].key.report_state);
 
-    dk_advanced_key_update(&g_keyboard_advanced_keys[0],A_ANIT_NORM(0.9));
-    dk_advanced_key_update(&g_keyboard_advanced_keys[1],A_ANIT_NORM(0.9));
+    keyboard_advanced_key_update(&g_keyboard_advanced_keys[0],A_ANIT_NORM(0.9));
+    keyboard_advanced_key_update(&g_keyboard_advanced_keys[1],A_ANIT_NORM(0.9));
+    dynamic_key_process();
     EXPECT_TRUE(g_keyboard_advanced_keys[0].key.state);
     EXPECT_TRUE(g_keyboard_advanced_keys[1].key.state);
-    EXPECT_FALSE(g_keyboard_advanced_keys[0].key.report_state);
-    EXPECT_TRUE(g_keyboard_advanced_keys[1].key.report_state);
 
     dynamic_key->m.mode |= 0x80;
-    dk_advanced_key_update(&g_keyboard_advanced_keys[0],A_ANIT_NORM(0));
-    dk_advanced_key_update(&g_keyboard_advanced_keys[1],A_ANIT_NORM(0));
-    dk_advanced_key_update(&g_keyboard_advanced_keys[0],A_ANIT_NORM(0.9));
-    dk_advanced_key_update(&g_keyboard_advanced_keys[1],A_ANIT_NORM(0.9));
+    keyboard_advanced_key_update(&g_keyboard_advanced_keys[0],A_ANIT_NORM(0));
+    keyboard_advanced_key_update(&g_keyboard_advanced_keys[1],A_ANIT_NORM(0));
+    keyboard_advanced_key_update(&g_keyboard_advanced_keys[0],A_ANIT_NORM(0.9));
+    keyboard_advanced_key_update(&g_keyboard_advanced_keys[1],A_ANIT_NORM(0.9));
+    dynamic_key_process();
     EXPECT_TRUE(g_keyboard_advanced_keys[0].key.state);
     EXPECT_TRUE(g_keyboard_advanced_keys[1].key.state);
-    EXPECT_TRUE(g_keyboard_advanced_keys[0].key.report_state);
-    EXPECT_TRUE(g_keyboard_advanced_keys[1].key.report_state);
 }
 
 
 TEST(DynamicKey, MutexKeyNeural)
 {
-    g_keymap[0][0] = DYNAMIC_KEY | (1 << 8);
-    g_keymap[0][1] = DYNAMIC_KEY | (1 << 8);
-    DynamicKey*dynamic_key = &g_keyboard_dynamic_keys[1];
+    g_keymap[0][0] = DYNAMIC_KEY | (0 << 8);
+    g_keymap[0][1] = DYNAMIC_KEY | (0 << 8);
+    g_keymap_cache[0] = g_keymap[0][0];
+    g_keymap_cache[1] = g_keymap[0][1];
+    DynamicKey*dynamic_key = &g_dynamic_keys[0];
     dynamic_key->m.type = DYNAMIC_KEY_MUTEX;
     dynamic_key->m.mode = DK_MUTEX_NEUTRAL;
     dynamic_key->m.key_binding[0] = KEY_A;
@@ -575,51 +538,48 @@ TEST(DynamicKey, MutexKeyNeural)
     dynamic_key->m.key_id[0] = 0;
     dynamic_key->m.key_id[1] = 1;
 
-    dk_advanced_key_update(&g_keyboard_advanced_keys[0],A_ANIT_NORM(1));
-    dk_advanced_key_update(&g_keyboard_advanced_keys[1],A_ANIT_NORM(1));
-    dk_advanced_key_update(&g_keyboard_advanced_keys[0],A_ANIT_NORM(0));
-    dk_advanced_key_update(&g_keyboard_advanced_keys[1],A_ANIT_NORM(0));
+    keyboard_advanced_key_update(&g_keyboard_advanced_keys[0],A_ANIT_NORM(1));
+    keyboard_advanced_key_update(&g_keyboard_advanced_keys[1],A_ANIT_NORM(1));
+    keyboard_advanced_key_update(&g_keyboard_advanced_keys[0],A_ANIT_NORM(0));
+    keyboard_advanced_key_update(&g_keyboard_advanced_keys[1],A_ANIT_NORM(0));
+    dynamic_key_process();
 
-    dk_advanced_key_update(&g_keyboard_advanced_keys[0],A_ANIT_NORM(0.6));
-    dk_advanced_key_update(&g_keyboard_advanced_keys[1],A_ANIT_NORM(0));
+    keyboard_advanced_key_update(&g_keyboard_advanced_keys[0],A_ANIT_NORM(0.6));
+    keyboard_advanced_key_update(&g_keyboard_advanced_keys[1],A_ANIT_NORM(0));
+    dynamic_key_process();
     EXPECT_TRUE(g_keyboard_advanced_keys[0].key.state);
     EXPECT_FALSE(g_keyboard_advanced_keys[1].key.state);
-    EXPECT_TRUE(g_keyboard_advanced_keys[0].key.report_state);
-    EXPECT_FALSE(g_keyboard_advanced_keys[1].key.report_state);
 
-    dk_advanced_key_update(&g_keyboard_advanced_keys[0],A_ANIT_NORM(0.6));
-    dk_advanced_key_update(&g_keyboard_advanced_keys[1],A_ANIT_NORM(0.6));
+    keyboard_advanced_key_update(&g_keyboard_advanced_keys[0],A_ANIT_NORM(0.6));
+    keyboard_advanced_key_update(&g_keyboard_advanced_keys[1],A_ANIT_NORM(0.6));
+    dynamic_key_process();
     EXPECT_TRUE(g_keyboard_advanced_keys[0].key.state);
     EXPECT_TRUE(g_keyboard_advanced_keys[1].key.state);
-    EXPECT_FALSE(g_keyboard_advanced_keys[0].key.report_state);
-    EXPECT_FALSE(g_keyboard_advanced_keys[1].key.report_state);
 
-    dk_advanced_key_update(&g_keyboard_advanced_keys[0],A_ANIT_NORM(0.3));
-    dk_advanced_key_update(&g_keyboard_advanced_keys[1],A_ANIT_NORM(0.6));
+    keyboard_advanced_key_update(&g_keyboard_advanced_keys[0],A_ANIT_NORM(0.3));
+    keyboard_advanced_key_update(&g_keyboard_advanced_keys[1],A_ANIT_NORM(0.6));
+    dynamic_key_process();
     EXPECT_FALSE(g_keyboard_advanced_keys[0].key.state);
     EXPECT_TRUE(g_keyboard_advanced_keys[1].key.state);
-    EXPECT_FALSE(g_keyboard_advanced_keys[0].key.report_state);
-    EXPECT_TRUE(g_keyboard_advanced_keys[1].key.report_state);
 
-    dk_advanced_key_update(&g_keyboard_advanced_keys[0],A_ANIT_NORM(0.6));
-    dk_advanced_key_update(&g_keyboard_advanced_keys[1],A_ANIT_NORM(0.6));
+    keyboard_advanced_key_update(&g_keyboard_advanced_keys[0],A_ANIT_NORM(0.6));
+    keyboard_advanced_key_update(&g_keyboard_advanced_keys[1],A_ANIT_NORM(0.6));
+    dynamic_key_process();
     EXPECT_TRUE(g_keyboard_advanced_keys[0].key.state);
     EXPECT_TRUE(g_keyboard_advanced_keys[1].key.state);
-    EXPECT_FALSE(g_keyboard_advanced_keys[0].key.report_state);
-    EXPECT_FALSE(g_keyboard_advanced_keys[1].key.report_state);
 
-    dk_advanced_key_update(&g_keyboard_advanced_keys[0],A_ANIT_NORM(0.9));
-    dk_advanced_key_update(&g_keyboard_advanced_keys[1],A_ANIT_NORM(0.9));
+    keyboard_advanced_key_update(&g_keyboard_advanced_keys[0],A_ANIT_NORM(0.9));
+    keyboard_advanced_key_update(&g_keyboard_advanced_keys[1],A_ANIT_NORM(0.9));
+    dynamic_key_process();
     EXPECT_TRUE(g_keyboard_advanced_keys[0].key.state);
     EXPECT_TRUE(g_keyboard_advanced_keys[1].key.state);
-    EXPECT_FALSE(g_keyboard_advanced_keys[0].key.report_state);
-    EXPECT_FALSE(g_keyboard_advanced_keys[1].key.report_state);
 
     dynamic_key->m.mode |= 0x80;
-    dk_advanced_key_update(&g_keyboard_advanced_keys[0],A_ANIT_NORM(0));
-    dk_advanced_key_update(&g_keyboard_advanced_keys[1],A_ANIT_NORM(0));
-    dk_advanced_key_update(&g_keyboard_advanced_keys[0],A_ANIT_NORM(0.9));
-    dk_advanced_key_update(&g_keyboard_advanced_keys[1],A_ANIT_NORM(0.9));
+    keyboard_advanced_key_update(&g_keyboard_advanced_keys[0],A_ANIT_NORM(0));
+    keyboard_advanced_key_update(&g_keyboard_advanced_keys[1],A_ANIT_NORM(0));
+    keyboard_advanced_key_update(&g_keyboard_advanced_keys[0],A_ANIT_NORM(0.9));
+    keyboard_advanced_key_update(&g_keyboard_advanced_keys[1],A_ANIT_NORM(0.9));
+    dynamic_key_process();
     EXPECT_TRUE(g_keyboard_advanced_keys[0].key.state);
     EXPECT_TRUE(g_keyboard_advanced_keys[1].key.state);
     EXPECT_TRUE(g_keyboard_advanced_keys[0].key.report_state);

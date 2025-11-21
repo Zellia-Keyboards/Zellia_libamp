@@ -212,6 +212,7 @@ enum KeycodeEnum {
   JOYSTICK_COLLECTION          = 0xaa,
   MIDI_COLLECTION              = 0xab,
   MIDI_NOTE                    = 0xac,
+  MACRO_COLLECTION             = 0xad,
   KEY_USER                     = 0xFD,
   KEYBOARD_OPERATION           = 0xFE,
   KEY_TRANSPARENT              = 0xFF,
@@ -657,7 +658,7 @@ enum MIDINoteKeycode
 };
 
 
-static inline uint16_t CONSUMER_KEYCODE_TO_RAWCODE(uint8_t key) {
+static inline uint16_t consumer_keycode_to_rawcide(uint8_t key) {
   switch (key) {
   case CONSUMER_AUDIO_MUTE:
     return AUDIO_MUTE;

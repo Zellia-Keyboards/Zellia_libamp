@@ -5,14 +5,11 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 #include "packet.h"
-#include "keyboard.h"
-#include "keyboard_def.h"
 #include "rgb.h"
-#include "string.h"
-#include "packet.h"
 #include "layer.h"
 #include "driver.h"
 
+#include "string.h"
 
 static inline void command_advanced_key_config_normalize(AdvancedKeyConfigurationNormalized* buffer, AdvancedKeyConfiguration* config)
 {
@@ -155,7 +152,7 @@ void packet_process_rgb_config(PacketData*data)
     {
         for (uint8_t i = 0; i < packet->length; i++)
         {
-            uint16_t rgb_index = g_rgb_mapping[packet->data[i].index];
+            uint16_t rgb_index = g_rgb_inverse_mapping[packet->data[i].index];
             if (rgb_index < RGB_NUM)
             {
                 g_rgb_configs[rgb_index].mode  = packet->data[i].mode;
@@ -171,10 +168,10 @@ void packet_process_rgb_config(PacketData*data)
     {
         for (uint8_t i = 0; i < packet->length; i++)
         {
-            uint8_t key_index =  g_rgb_mapping[packet->data[i].index];
+            uint8_t key_index =  g_rgb_inverse_mapping[packet->data[i].index];
             if (key_index < RGB_NUM)
             {
-                uint8_t rgb_index = g_rgb_mapping[key_index];
+                uint8_t rgb_index = g_rgb_inverse_mapping[key_index];
                 packet->data[i].index = key_index;
                 packet->data[i].mode = g_rgb_configs[rgb_index].mode;
                 packet->data[i].r = g_rgb_configs[rgb_index].rgb.r;
@@ -219,11 +216,11 @@ void packet_process_dynamic_key(PacketData*data)
             switch (((DynamicKey*)packet->dynamic_key)->type)
             {
             case DYNAMIC_KEY_STROKE:
-                dynamic_key_stroke_anti_normalize((DynamicKeyStroke4x4*)&g_keyboard_dynamic_keys[packet->index],
+                dynamic_key_stroke_anti_normalize((DynamicKeyStroke4x4*)&g_dynamic_keys[packet->index],
                     (DynamicKeyStroke4x4Normalized*)&packet->dynamic_key);
                 break;
             default:
-                memcpy(&g_keyboard_dynamic_keys[packet->index], &packet->dynamic_key, sizeof(DynamicKey));
+                memcpy(&g_dynamic_keys[packet->index], &packet->dynamic_key, sizeof(DynamicKey));
                 break;
             }
         }
@@ -236,14 +233,14 @@ void packet_process_dynamic_key(PacketData*data)
         {
             return;
         }
-        switch (g_keyboard_dynamic_keys[dk_index].type)
+        switch (g_dynamic_keys[dk_index].type)
         {
         case DYNAMIC_KEY_STROKE:
             dynamic_key_stroke_normalize((DynamicKeyStroke4x4Normalized*)&packet->dynamic_key,
-                (DynamicKeyStroke4x4*)&g_keyboard_dynamic_keys[dk_index]);
+                (DynamicKeyStroke4x4*)&g_dynamic_keys[dk_index]);
             break;
         default:
-            memcpy(&packet->dynamic_key,&g_keyboard_dynamic_keys[dk_index],sizeof(DynamicKey));
+            memcpy(&packet->dynamic_key,&g_dynamic_keys[dk_index],sizeof(DynamicKey));
             break;
         }
     }

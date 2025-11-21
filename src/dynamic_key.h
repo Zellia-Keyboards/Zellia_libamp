@@ -7,19 +7,16 @@
 #ifndef DYNAMIC_KEY_H_
 #define DYNAMIC_KEY_H_
 
-#include "stdint.h"
-#include "stddef.h"
-#include "stdbool.h"
-#include "key.h"
-#include "keycode.h"
-#include "event.h"
-#include "advanced_key.h"
+#include "keyboard.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
+#ifndef DYNAMIC_KEY_NUM
 #define DYNAMIC_KEY_NUM 32
+#endif
+
 typedef enum __DynamicKeyType
 {
     DYNAMIC_KEY_NONE,
@@ -54,8 +51,9 @@ typedef struct __DynamicKeyStroke4x4
     AnalogValue press_fully_distance;
     AnalogValue release_begin_distance;
     AnalogValue release_fully_distance;
+    uint16_t key_id;
     AnalogValue value;
-    uint32_t key_end_time[4];
+    uint32_t key_end_tick[4];
     uint8_t key_state;
 } DynamicKeyStroke4x4;
 
@@ -64,16 +62,22 @@ typedef struct __DynamicKeyModTap
     uint32_t type;
     Keycode key_binding[2];
     uint32_t duration;
-    uint32_t begin_time;
-    uint32_t end_time;
+    uint16_t key_id;
+    uint32_t begin_tick;
+    uint32_t end_tick;
     uint8_t state;
+    uint8_t key_state;
+    uint8_t key_report_state;
 } DynamicKeyModTap;
 
 typedef struct __DynamicKeyToggleKey
 {
     uint32_t type;
     Keycode key_binding;
-    bool state;
+    uint16_t key_id;
+    uint8_t state;
+    uint8_t key_state;
+    uint8_t key_report_state;
 } DynamicKeyToggleKey;
 
 typedef enum __DynamicKeyMutexMode
@@ -91,7 +95,8 @@ typedef struct __DynamicKeyMutex
     Keycode key_binding[2];
     uint16_t key_id[2];
     uint8_t mode;
-    bool trigger_state;
+    uint8_t key_state[2];
+    uint8_t key_report_state[2];
 } DynamicKeyMutex;
 
 typedef union __DynamicKey
@@ -104,12 +109,16 @@ typedef union __DynamicKey
     uint32_t aligned_buffer[15];
 } DynamicKey;
 
-void dynamic_key_event_handler(KeyboardEvent event);
-void dynamic_key_add_buffer(KeyboardEvent event);
-void dynamic_key_s_event_handler (DynamicKey*dynamic_key, KeyboardEvent event);
-void dynamic_key_mt_event_handler(DynamicKey*dynamic_key, KeyboardEvent event);
-void dynamic_key_tk_event_handler(DynamicKey*dynamic_key, KeyboardEvent event);
-void dynamic_key_m_event_handler(DynamicKey*dynamic_key, KeyboardEvent event);
+#ifdef DYNAMICKEY_ENABLE
+extern DynamicKey g_dynamic_keys[DYNAMIC_KEY_NUM];
+#endif
+
+void dynamic_key_process(void);
+void dynamic_key_add_buffer(void);
+void dynamic_key_s_process (DynamicKeyStroke4x4*dynamic_key);
+void dynamic_key_mt_process(DynamicKeyModTap*dynamic_key);
+void dynamic_key_tk_process(DynamicKeyToggleKey*dynamic_key);
+void dynamic_key_m_process (DynamicKeyMutex*dynamic_key);
 
 #ifdef __cplusplus
 }

@@ -7,11 +7,7 @@
 #ifndef JOYSTICK_H
 #define JOYSTICK_H
 
-#include "stdint.h"
-#include "keycode.h"
-#include "keyboard_def.h"
-#include "keyboard_conf.h"
-#include "analog.h"
+#include "keyboard.h"
 
 #ifdef __cplusplus
 extern "C" {

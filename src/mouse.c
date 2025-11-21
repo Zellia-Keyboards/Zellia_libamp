@@ -4,7 +4,6 @@
  *
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
-#include "keyboard.h"
 #include "mouse.h"
 #include "string.h"
 #include "driver.h"
@@ -16,12 +15,13 @@ void mouse_event_handler(KeyboardEvent event)
     if (MOUSE_KEYCODE_IS_MOVE(event.keycode))
     {
         g_keyboard_report_flags.mouse = true;
-        ((Key*)event.key)->report_state = true;
+        keyboard_key_set_report_state((Key*)event.key, true);
         return;
     }
     switch (event.event)
     {
     case KEYBOARD_EVENT_KEY_DOWN:
+        keyboard_key_event_down_callback((Key*)event.key);
         g_keyboard_report_flags.mouse = true;
         break;
     case KEYBOARD_EVENT_KEY_TRUE:
@@ -47,7 +47,7 @@ void mouse_add_buffer(KeyboardEvent event)
     if (MOUSE_KEYCODE_IS_MOVE(event.keycode))
     {
         g_keyboard_report_flags.mouse = true;
-        mouse_set_axis(event.keycode, KEYBOARD_GET_KEY_EFFECTIVE_ANALOG_VALUE(event.key));
+        mouse_set_axis(event.keycode, keyboard_get_key_effective_analog_value(event.key));
         return;
     }
     switch (KEYCODE_GET_SUB(event.keycode))
@@ -86,14 +86,14 @@ void mouse_add_buffer(KeyboardEvent event)
 
 static inline bool should_move(int t, int speed)
 {
-    return ((t + 1) * speed / REPORT_RATE ) - ( t * speed / REPORT_RATE);
+    return ((t + 1) * speed / POLLING_RATE ) - ( t * speed / POLLING_RATE);
 }
 
 
 void mouse_set_axis(Keycode keycode, AnalogValue value)
 {
     uint32_t speed = A_NORM((value - ANALOG_VALUE_MIN)) * MOUSE_MAX_SPEED;
-    uint32_t mouse_value = speed / REPORT_RATE + should_move(g_keyboard_tick%REPORT_RATE, speed);
+    uint32_t mouse_value = speed / POLLING_RATE + should_move(g_keyboard_tick%POLLING_RATE, speed);
     switch (KEYCODE_GET_SUB(keycode))
     {
     case MOUSE_MOVE_UP:

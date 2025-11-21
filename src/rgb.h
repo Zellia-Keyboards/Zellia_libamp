@@ -9,7 +9,6 @@
 
 #include "color.h"
 #include "keyboard.h"
-#include "keyboard_conf.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -94,6 +93,7 @@ extern "C" {
 #define KEY_SWITCH_DISTANCE 19050
 
 #define GAMMA_CORRECT(value, max) (powf(((float)value)/(max), RGB_GAMMA)*(max))
+
 typedef enum __RGBBaseMode
 {
     RGB_BASE_MODE_OFF,
@@ -110,7 +110,7 @@ typedef struct __RGBBaseConfig
     ColorRGB secondary_rgb;
     ColorHSV secondary_hsv;
     float speed;
-    uint32_t begin_time;
+    uint32_t begin_tick;
     uint16_t direction;
     uint8_t density;
     uint8_t brightness;
@@ -137,7 +137,7 @@ typedef struct __RGBConfig
     ColorRGB rgb;
     ColorHSV hsv;
     float speed;
-    uint32_t begin_time;
+    uint32_t begin_tick;
 } RGBConfig;
 
 typedef struct __RGBLocation
@@ -148,7 +148,7 @@ typedef struct __RGBLocation
 
 typedef struct __RGBArgument
 {
-    uint32_t begin_time;
+    uint32_t begin_tick;
     uint8_t rgb_ptr;
 }RGBArgument;
 
@@ -189,9 +189,14 @@ void rgb_forward_list_push_front(RGBArgumentList* list, RGBArgument t);
 extern ColorRGB g_rgb_colors[RGB_NUM];
 extern volatile bool g_rgb_hid_mode;
 extern RGBBaseConfig g_rgb_base_config;
-extern RGBConfig g_rgb_configs[RGB_NUM];
 
-extern const uint8_t g_rgb_mapping[ADVANCED_KEY_NUM];
+#ifndef RGB_CUSTOM_INVERSE_MAPPING
+extern uint16_t g_rgb_inverse_mapping[TOTAL_KEY_NUM];
+#else
+extern const uint16_t g_rgb_inverse_mapping[TOTAL_KEY_NUM];
+#endif
+extern RGBConfig g_rgb_configs[RGB_NUM];
+extern const uint16_t g_rgb_mapping[RGB_NUM];
 extern const RGBLocation g_rgb_locations[RGB_NUM];
 
 void rgb_init(void);

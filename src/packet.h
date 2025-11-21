@@ -7,9 +7,7 @@
 #ifndef PACKET_H
 #define PACKET_H
 
-#include "stdint.h"
-#include "keyboard_def.h"
-#include "dynamic_key.h"
+#include "keyboard.h"
 #include "storage.h"
 
 #ifdef __cplusplus

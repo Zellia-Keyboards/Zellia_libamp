@@ -7,7 +7,6 @@
 #ifndef RECORD_H_
 #define RECORD_H_
 #include "keyboard.h"
-#include "keyboard_conf.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -45,8 +44,7 @@ typedef struct __LoopArray
 } LoopArray;
 
 #ifdef COUNTER_ENABLE
-extern uint32_t g_key_init_counts[ADVANCED_KEY_NUM];
-extern uint32_t g_key_counts[ADVANCED_KEY_NUM];
+extern uint32_t g_key_counts[TOTAL_KEY_NUM];
 #endif
 
 #ifdef KPS_ENABLE
@@ -75,7 +73,6 @@ LoopArrayElement loop_array_max(LoopArray *arr);
 void record_init(void);
 void record_bit_stream_timer(void);
 void record_analog_timer(void);
-void record_kps_timer(void);
 uint16_t record_get_kps(void);
 void record_kps_tick(void);
 void record_kps_timer(void);

@@ -13,12 +13,15 @@
 #define ADVANCED_KEY_NUM        64
 #define KEY_NUM                 0
 //#define FIXED_POINT_EXPERIMENTAL
-//#define CONTINOUS_POLL
 #define OPTIMIZE_FOR_FLOAT_DIVISION
 //#define CONTINOUS_DEBUG
 #define DEBUG_INTERVAL 1
 #define DYNAMICKEY_ENABLE
-//#define STORAGE_ENABLE
+#define MACRO_ENABLE
+#define SUSPEND_ENABLE
+#define OPTIMIZE_KEY_BITMAP
+#define OPTIMIZE_MOVING_AVERAGE_FOR_RINGBUF
+#define DEBOUNCE                0
 
 /********************/
 /* Keyboard Default */
@@ -27,7 +30,7 @@
 #define DEFAULT_CALIBRATION_MODE    ADVANCED_KEY_AUTO_CALIBRATION_UNDEFINED
 #define DEFAULT_TRIGGER_DISTANCE    0.08
 #define DEFAULT_RELEASE_DISTANCE    0.08
-#define DEFAULT_UPPER_DEADZONE      0.00
+#define DEFAULT_UPPER_DEADZONE      0.01
 #define DEFAULT_LOWER_DEADZONE      0.2
 #define DEFAULT_ACTIVATION_VALUE    0.5
 #define DEFAULT_DEACTIVATION_VALUE  0.49
@@ -36,32 +39,58 @@
 /**********/
 /* Analog */
 /**********/
-#define RING_BUF_LEN            8
+#define RING_BUF_LEN            2
+//#define CALIBRATION_LPF_ENABLE
+
+/***********/
+/* Storage */
+/***********/
+//#define STORAGE_ENABLE
+//#define LFS_ENABLE
+//#define LFS_READ_SIZE       16
+//#define LFS_PROG_SIZE       16
+//#define LFS_BLOCK_SIZE      4096
+//#define LFS_BLOCK_COUNT     4096
+//#define LFS_CACHE_SIZE      16
+//#define LFS_LOOKAHEAD_SIZE  16
+//#define LFS_BLOCK_CYCLES    500
+//#define LFS_BUFFER_SIZE     16
 
 /*******/
 /* RGB */
 /*******/
 #define RGB_ENABLE
 #define RGB_NUM                 (ADVANCED_KEY_NUM)
-#define ONE_PULSE               (60)
-#define ZERO_PULSE              (29)
-#define NONE_PULSE              (0)
-#define RGB_RESET_LENGTH        (400)
-#define RGB_BUFFER_LENGTH       (RGB_RESET_LENGTH+3*8*(RGB_NUM))
 #define RGB_MAX_DURATION        2000
-#define FADING_DISTANCE         5.0f
-#define JELLY_DISTANCE          10.0f
-#define PORT_LOCATION           {1, 4.5}
+#define FADING_DISTANCE         8.0f
+#define JELLY_DISTANCE          5.0f
+#define BUBBLE_DISTANCE         2.5f
+#define PORT_LOCATION           {1, -0.5}
 #define RGB_FLASH_MAX_DURATION  1000
 #define RGB_FLASH_RIPPLE_SPEED  0.03
 #define RGB_DEFAULT_MODE        RGB_MODE_LINEAR
 #define RGB_DEFAULT_SPEED       0.03
 #define RGB_DEFAULT_COLOR_HSV   {273, 78, 99}
-#define RGB_LEFT                0.0f
-#define RGB_TOP                 4.5f
-#define RGB_RIGHT               15.0f
-#define RGB_BOTTOM              -0.5f
+#define RGB_LEFT                -0.5f
+#define RGB_TOP                 -0.5f
+#define RGB_RIGHT               14.5f
+#define RGB_BOTTOM              4.5f
 #define RGB_USE_LIST_EXPERIMENTAL
+#define RGB_GAMMA_ENABLE
+#define RGB_GAMMA               2.2f
+#define RGB_CUSTOM_INVERSE_MAPPING
+#define RGB_BASE_MODE_USE_RAINBOW           1
+#define RGB_BASE_MODE_USE_WAVE              1
+#define RGB_MODE_USE_STATIC                 1
+#define RGB_MODE_USE_CYCLE                  1
+#define RGB_MODE_USE_LINEAR                 1
+#define RGB_MODE_USE_TRIGGER                1
+#define RGB_MODE_USE_STRING                 1
+#define RGB_MODE_USE_FADING_STRING          1
+#define RGB_MODE_USE_DIAMOND_RIPPLE         1
+#define RGB_MODE_USE_FADING_DIAMOND_RIPPLE  1
+#define RGB_MODE_USE_JELLY                  1
+#define RGB_MODE_USE_BUBBLE                 1
 
 /************/
 /* Joystick */
@@ -77,7 +106,7 @@
 /**********/
 /* Filter */
 /**********/
-//#define TOLERANCE               3
+#define TOLERANCE               1
 #define FILTER_ENABLE
 
 /**********/
@@ -105,6 +134,7 @@
 #define PRODUCT_ID 22319
 #define DEVICE_VER 2
 #define FIXED_NUM_CONFIGURATIONS 1
+#define USB_ENDPOINTS_ARE_REORDERABLE
 
 #define MANUFACTURER "dwdwdw5163&Lzq12345"
 #define PRODUCT "Oholeo Keyboard"
@@ -122,5 +152,6 @@
 //#define DIGITIZER_ENABLE
 //#define DIGITIZER_SHARED_EP
 //#define PROGRAMMABLE_BUTTON_ENABLE
+
 
 #endif /* KEYBOARD_CONF_H_ */

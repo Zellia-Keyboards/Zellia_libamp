@@ -5,7 +5,6 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 #include "joystick.h"
-#include "keyboard_def.h"
 #include "string.h"
 #include "driver.h"
 
@@ -16,12 +15,13 @@ void joystick_event_handler(KeyboardEvent event)
     if (JOYSTICK_KEYCODE_IS_AXIS(event.keycode))
     {
         g_keyboard_report_flags.joystick = true;
-        ((Key*)event.key)->report_state = true;
+        keyboard_key_set_report_state((Key*)&event.key, true);
         return;
     }
     switch (event.event)
     {
     case KEYBOARD_EVENT_KEY_DOWN:
+        keyboard_key_event_down_callback((Key*)event.key);
         g_keyboard_report_flags.joystick = true;
         break;
     case KEYBOARD_EVENT_KEY_TRUE:
@@ -46,7 +46,7 @@ void joystick_add_buffer(KeyboardEvent event)
     if (JOYSTICK_KEYCODE_IS_AXIS(event.keycode))
     {
         g_keyboard_report_flags.joystick = true;
-        joystick_set_axis(event.keycode, KEYBOARD_GET_KEY_ANALOG_VALUE(event.key));
+        joystick_set_axis(event.keycode, keyboard_get_key_analog_value(event.key));
         return;
     }
     uint8_t button = KEYCODE_GET_SUB(event.keycode);

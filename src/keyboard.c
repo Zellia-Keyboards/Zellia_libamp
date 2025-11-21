@@ -5,9 +5,6 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 #include "keyboard.h"
-#include "analog.h"
-#include "keyboard_conf.h"
-#include "mouse.h"
 #include "layer.h"
 #include "record.h"
 #include "driver.h"
@@ -23,6 +20,9 @@
 #ifdef STORAGE_ENABLE
 #include "storage.h"
 #endif
+#ifdef MOUSE_ENABLE
+#include "mouse.h"
+#endif
 #ifdef DYNAMICKEY_ENABLE
 #include "dynamic_key.h"
 #endif
@@ -33,53 +33,65 @@
 #include "joystick.h"
 #endif
 
-__WEAK const Keycode g_default_keymap[LAYER_NUM][ADVANCED_KEY_NUM + KEY_NUM];
 __WEAK AdvancedKey g_keyboard_advanced_keys[ADVANCED_KEY_NUM];
 __WEAK Key g_keyboard_keys[KEY_NUM];
-
-uint16_t g_keymap[LAYER_NUM][ADVANCED_KEY_NUM + KEY_NUM];
-
 KeyboardLED g_keyboard_led_state;
+__WEAK KeyboardConfig g_keyboard_config;
+Keycode g_keymap[LAYER_NUM][TOTAL_KEY_NUM];
 
-uint32_t g_keyboard_tick;
+__WEAK const Keycode g_default_keymap[LAYER_NUM][TOTAL_KEY_NUM];
 
-uint8_t g_keyboard_knob_flag;
+__WEAK volatile uint32_t g_keyboard_tick;
 volatile bool g_keyboard_send_report_enable = true;
-volatile KeyboardConfig g_keyboard_config;
-
 volatile bool g_keyboard_is_suspend;
-volatile KeyboardReportFlag g_keyboard_report_flags;
+__WEAK volatile KeyboardReportFlag g_keyboard_report_flags;
 
 #ifdef NKRO_ENABLE
 static Keyboard_NKROBuffer keyboard_nkro_buffer;
 #endif
 static Keyboard_6KROBuffer keyboard_6kro_buffer;
 
-void keyboard_event_handler(KeyboardEvent event)
+#ifdef OPTIMIZE_KEY_BITMAP
+__WEAK volatile uint32_t g_key_active_bitmap[KEY_BITMAP_SIZE];
+#endif
+
+bool keyboard_event_handler(KeyboardEvent event)
 {
+    Key* key = (Key*)event.key;
+    bool last_report_state = key->report_state;
+#if DEBOUNCE > 0
+    if (key->debounce)
+    {
+        key->debounce--;
+    }
+    else
+    {
+        bool changed = key->report_state != key->state;
+        if (changed)
+        {
+            key->debounce = DEBOUNCE;
+        }
+        keyboard_key_set_report_state(key, key->state);
+        event.event = changed | (key->report_state<<1);
+        
+    }
+#else
+    keyboard_key_set_report_state(key, key->state);
+#endif
+#ifdef MACRO_ENABLE
+    macro_record_handler(event);
+#endif
     switch (event.event)
     {
     case KEYBOARD_EVENT_KEY_DOWN:
-        layer_lock(((Key*)event.key)->id);
-        if (IS_ADVANCED_KEY(event.key) && KEYCODE_GET_MAIN(event.keycode) != DYNAMIC_KEY)
-        {
-            keyboard_advanced_key_event_down_callback((AdvancedKey*)event.key);
-        }
-        //fall through
+        layer_lock(key->id);
+        break;
     case KEYBOARD_EVENT_KEY_TRUE:
-        if (KEYCODE_GET_MAIN(event.keycode) != DYNAMIC_KEY)
-        {
-            ((Key*)event.key)->report_state = true;
-        }
         break;
     case KEYBOARD_EVENT_KEY_UP:
-        layer_unlock(((Key*)event.key)->id);
-        //fall through
+        layer_unlock(key->id);
+        break;
     case KEYBOARD_EVENT_KEY_FALSE:
-        if (KEYCODE_GET_MAIN(event.keycode) != DYNAMIC_KEY)
-        {
-            ((Key*)event.key)->report_state = false;
-        }
         break;
     default:
         break;
@@ -102,9 +114,15 @@ void keyboard_event_handler(KeyboardEvent event)
         joystick_event_handler(event);
         break;
 #endif
-#ifdef DYNAMICKEY_ENABLE
-    case DYNAMIC_KEY:
-        dynamic_key_event_handler(event);
+#ifdef MIDI_ENABLE
+    case MIDI_COLLECTION:
+    case MIDI_NOTE:
+        midi_event_handler(event);
+        break;
+#endif
+#ifdef MACRO_ENABLE
+    case MACRO_COLLECTION:
+        macro_event_handler(event);
         break;
 #endif
     case LAYER_CONTROL:
@@ -116,11 +134,11 @@ void keyboard_event_handler(KeyboardEvent event)
     case KEY_USER:
         keyboard_user_event_handler(event);
         break;
-        
     default:
         switch (event.event)
         {
         case KEYBOARD_EVENT_KEY_DOWN:
+            keyboard_key_event_down_callback(key);
             g_keyboard_report_flags.keyboard = true;
             break;
         case KEYBOARD_EVENT_KEY_TRUE:
@@ -135,6 +153,7 @@ void keyboard_event_handler(KeyboardEvent event)
         }
         break;
     }
+    return last_report_state != key->report_state;
 }
 
 void keyboard_add_buffer(KeyboardEvent event)
@@ -155,11 +174,6 @@ void keyboard_add_buffer(KeyboardEvent event)
 #ifdef JOYSTICK_ENABLE
     case JOYSTICK_COLLECTION:
         joystick_add_buffer(event);
-        break;
-#endif
-#ifdef DYNAMICKEY_ENABLE
-    case DYNAMIC_KEY:
-        dynamic_key_add_buffer(event);
         break;
 #endif
     case LAYER_CONTROL:
@@ -194,6 +208,7 @@ void keyboard_operation_event_handler(KeyboardEvent event)
     case KEYBOARD_EVENT_KEY_UP:
         break;
     case KEYBOARD_EVENT_KEY_DOWN:
+        keyboard_key_event_down_callback((Key*)event.key);
         uint8_t modifier = KEYCODE_GET_SUB(event.keycode);
         if ((modifier & 0x3F) < KEYBOARD_CONFIG_BASE)
         {
@@ -273,17 +288,20 @@ void keyboard_operation_event_handler(KeyboardEvent event)
     }
 }
 
-void keyboard_advanced_key_event_down_callback(AdvancedKey*key)
+void keyboard_key_event_down_callback(Key*key)
 {
+    if (IS_ADVANCED_KEY(key))
+    {
 #ifdef RGB_ENABLE
-    rgb_activate(key->key.id);
+        rgb_activate(key->id);
 #endif
 #ifdef KPS_ENABLE
-    record_kps_tick();
+        record_kps_tick();
 #endif
 #ifdef COUNTER_ENABLE
-    g_key_counts[key->key.id]++;
+        g_key_counts[key->id]++;
 #endif
+    }
 }
 
 int keyboard_buffer_send(void)
@@ -380,6 +398,14 @@ void keyboard_NKRObuffer_clear(Keyboard_NKROBuffer*buf)
 void keyboard_init(void)
 {
     g_keyboard_tick = 0;
+    for (int i = 0; i < ADVANCED_KEY_NUM; i++)
+    {
+        g_keyboard_advanced_keys[i].key.id = i;
+    }
+    for (int i = 0; i < KEY_NUM; i++)
+    {
+        g_keyboard_keys[i].id = ADVANCED_KEY_NUM + i;
+    }
 #ifdef STORAGE_ENABLE
     storage_mount();
     storage_read_config_index();
@@ -410,7 +436,7 @@ __WEAK void keyboard_reset_to_default(void)
     rgb_factory_reset();
 #endif
 #ifdef DYNAMICKEY_ENABLE
-    memset(g_keyboard_dynamic_keys, 0, sizeof(g_keyboard_dynamic_keys));
+    memset(g_dynamic_keys, 0, sizeof(g_dynamic_keys));
 #endif
 }
 
@@ -480,6 +506,7 @@ void keyboard_set_config_index(uint8_t index)
 
 void keyboard_fill_buffer(void)
 {
+#ifndef OPTIMIZE_KEY_BITMAP
     for (int i = 0; i < ADVANCED_KEY_NUM; i++)
     {
         AdvancedKey*key = &g_keyboard_advanced_keys[i];
@@ -496,6 +523,41 @@ void keyboard_fill_buffer(void)
             keyboard_add_buffer(MK_EVENT(layer_cache_get_keycode(key->id), KEYBOARD_EVENT_NO_EVENT, key));
         }
     }
+#else
+    for (uint16_t i = 0; i < KEY_BITMAP_SIZE; i++)
+    {
+        uint32_t block = g_key_active_bitmap[i];
+#ifdef __GNUC__
+        while (block != 0)
+        {
+            int bit_index = __builtin_ctz(block);
+            uint16_t id = i * 32 + bit_index;
+            Key* key = keyboard_get_key(id);
+            keyboard_add_buffer(MK_EVENT(layer_cache_get_keycode(id), KEYBOARD_EVENT_NO_EVENT, key));
+            BIT_RESET(block, bit_index);
+        }
+#else
+        if (!block)
+            continue;
+        for (int bit_index = 0; bit_index < 32; bit_index++)
+        {
+            if (block & BIT(bit_index))
+            {
+                uint16_t id = i * 32 + bit_index;
+                if (id >= (TOTAL_KEY_NUM)) break;
+                Key* key = keyboard_get_key(id);
+                keyboard_add_buffer(MK_EVENT(layer_cache_get_keycode(id), KEYBOARD_EVENT_NO_EVENT, key));
+            }
+        }
+#endif
+    }
+#endif
+#ifdef DYNAMICKEY_ENABLE
+    dynamic_key_add_buffer();
+#endif
+#ifdef MACRO_ENABLE
+    macro_add_buffer();
+#endif
 }
 
 void keyboard_send_report(void)
@@ -546,15 +608,20 @@ void keyboard_send_report(void)
 __WEAK void keyboard_task(void)
 {
     keyboard_scan();
+#ifdef ENCODER_ENABLE
+    encoder_process();
+#endif
     for (uint16_t i = 0; i < ADVANCED_KEY_NUM; i++)
     {
         AdvancedKey*advanced_key = &g_keyboard_advanced_keys[i];
-        keyboard_event_handler(MK_EVENT(layer_cache_get_keycode(advanced_key->key.id), 
-                                                    advanced_key_update_raw(advanced_key, advanced_key_read(advanced_key)) ? 
-                                                   advanced_key->key.state ? KEYBOARD_EVENT_KEY_DOWN : KEYBOARD_EVENT_KEY_UP
-                                                   : advanced_key->key.state ? KEYBOARD_EVENT_KEY_TRUE : KEYBOARD_EVENT_KEY_FALSE ,
-                                                    advanced_key));
+        keyboard_advanced_key_update_raw(advanced_key, advanced_key_read(advanced_key));
     }
+#ifdef MACRO_ENABLE
+    macro_process();
+#endif
+#ifdef DYNAMICKEY_ENABLE
+    dynamic_key_process();
+#endif
 #ifdef SUSPEND_ENABLE
     if (g_keyboard_is_suspend)
     {
@@ -573,7 +640,7 @@ __WEAK void keyboard_task(void)
     {
         g_keyboard_report_flags.keyboard = true;
     }
-    if (g_keyboard_send_report_enable)
+    if (g_keyboard_send_report_enable && g_keyboard_report_flags.raw)
     {
         keyboard_clear_buffer();
         keyboard_fill_buffer();
@@ -589,11 +656,20 @@ __WEAK void keyboard_delay(uint32_t ms)
 bool keyboard_key_update(Key *key, bool state)
 {
     bool changed = key_update(key, state);
-    keyboard_event_handler(MK_EVENT(layer_cache_get_keycode(key->id), 
-                                    changed ? 
-                                    key->state ? KEYBOARD_EVENT_KEY_DOWN : KEYBOARD_EVENT_KEY_UP
-                                    : key->state ? KEYBOARD_EVENT_KEY_TRUE : KEYBOARD_EVENT_KEY_FALSE, key
-                                ));
-    key->report_state = state;
+    changed = keyboard_event_handler(MK_EVENT(layer_cache_get_keycode(key->id), changed | (key->state<<1), key));
+    return changed;
+}
+
+bool keyboard_advanced_key_update(AdvancedKey *advanced_key, AnalogValue value)
+{
+    bool changed = advanced_key_update(advanced_key, value);
+    changed = keyboard_event_handler(MK_EVENT(layer_cache_get_keycode(advanced_key->key.id), changed | (advanced_key->key.state<<1), advanced_key));
+    return changed;
+}
+
+bool keyboard_advanced_key_update_raw(AdvancedKey *advanced_key, AnalogRawValue raw)
+{
+    bool changed = advanced_key_update_raw(advanced_key, raw);
+    changed = keyboard_event_handler(MK_EVENT(layer_cache_get_keycode(advanced_key->key.id), changed | (advanced_key->key.state<<1), advanced_key));
     return changed;
 }
