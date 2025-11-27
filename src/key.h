@@ -27,10 +27,13 @@ typedef struct __Key
     uint16_t id;
     bool state;
     bool report_state;
+    float bottom_distance;
     key_cb_t key_cb[KEY_EVENT_NUM];
 } Key;
 void key_update(Key *key, bool state);
 void key_attach(Key *key, KEY_EVENT e, key_cb_t cb);
+float key_get_bottom_distance(Key *key);
+void key_set_bottom_distance(Key *key, float distance);
 
 #ifdef __cplusplus
 }

@@ -219,3 +219,13 @@ __WEAK AnalogRawValue advanced_key_read_raw(AdvancedKey *advanced_key)
 {
     return ringbuf_avg(&g_adc_ringbufs[g_analog_map[advanced_key->key.id]]);;
 }
+
+float advanced_key_get_bottom_distance(AdvancedKey *advanced_key)
+{
+    return key_get_bottom_distance(&advanced_key->key);
+}
+
+void advanced_key_set_bottom_distance(AdvancedKey *advanced_key, float distance)
+{
+    key_set_bottom_distance(&advanced_key->key, distance);
+}

@@ -366,9 +366,14 @@ __WEAK void keyboard_reset_to_default(void)
         g_keyboard_advanced_keys[i].config.activation_value = A_ANIT_NORM(DEFAULT_ACTIVATION_VALUE);
         g_keyboard_advanced_keys[i].config.deactivation_value = A_ANIT_NORM(DEFAULT_DEACTIVATION_VALUE);
         g_keyboard_advanced_keys[i].config.calibration_mode = DEFAULT_CALIBRATION_MODE;
+        g_keyboard_advanced_keys[i].key.bottom_distance = DEFAULT_BOTTOM_DISTANCE;
         advanced_key_set_deadzone(g_keyboard_advanced_keys + i, 
             A_ANIT_NORM(DEFAULT_UPPER_DEADZONE), 
             A_ANIT_NORM(DEFAULT_LOWER_DEADZONE));
+    }
+    for (uint8_t i = 0; i < KEY_NUM; i++)
+    {
+        g_keyboard_keys[i].bottom_distance = DEFAULT_BOTTOM_DISTANCE;
     }
 #ifdef RGB_ENABLE
     rgb_factory_reset();

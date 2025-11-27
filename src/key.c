@@ -25,3 +25,13 @@ void key_attach(Key* key, KEY_EVENT e, key_cb_t cb)
 {
     key->key_cb[e] = cb;
 }
+
+float key_get_bottom_distance(Key *key)
+{
+    return key->bottom_distance;
+}
+
+void key_set_bottom_distance(Key *key, float distance)
+{
+    key->bottom_distance = distance;
+}

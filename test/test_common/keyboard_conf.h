@@ -32,6 +32,7 @@
 #define DEFAULT_ACTIVATION_VALUE    0.5
 #define DEFAULT_DEACTIVATION_VALUE  0.49
 #define DEFAULT_ESTIMATED_RANGE     500
+#define DEFAULT_BOTTOM_DISTANCE     4.00f
 
 /**********/
 /* Analog */

@@ -104,6 +104,8 @@ void advanced_key_reset_range(AdvancedKey* advanced_key, AnalogRawValue value);
 void advanced_key_set_deadzone(AdvancedKey *advanced_key, AnalogValue upper, AnalogValue lower);
 AnalogRawValue advanced_key_read(AdvancedKey *advanced_key);
 AnalogRawValue advanced_key_read_raw(AdvancedKey *advanced_key);
+float advanced_key_get_bottom_distance(AdvancedKey *advanced_key);
+void advanced_key_set_bottom_distance(AdvancedKey *advanced_key, float distance);
 
 #ifdef __cplusplus
 }
