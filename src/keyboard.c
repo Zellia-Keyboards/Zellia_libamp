@@ -405,8 +405,8 @@ void keyboard_init(void)
     rgb_init();
 #endif
     keyboard_recovery();
-#ifdef ASSIGN_ENABLE
-#if ASSIGN_IS_SLAVE
+#ifdef NEXUS_ENABLE
+#if NEXUS_IS_SLAVE
     g_keyboard_config.enable_report = false;
 #else
     nexus_init();
