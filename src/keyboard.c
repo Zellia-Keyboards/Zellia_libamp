@@ -406,6 +406,9 @@ void keyboard_init(void)
     rgb_init();
 #endif
     keyboard_recovery();
+#ifdef ASSIGN_ENABLE
+    assign_init();
+#endif
 }
 
 __WEAK void keyboard_reset_to_default(void)
