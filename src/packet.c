@@ -50,8 +50,7 @@ static inline void command_advanced_key_config_anti_normalize(AdvancedKeyConfigu
 #endif
 }
 
-
-void packet_process(uint8_t *buf, uint16_t len)
+void packet_process_buffer(uint8_t *buf, uint16_t len)
 {
     UNUSED(len);
     PacketData *packet = (PacketData *)buf;
@@ -112,6 +111,12 @@ void packet_process(uint8_t *buf, uint16_t len)
         packet_process_user(buf, len);
         break;
     }
+}
+
+void packet_process(uint8_t *buf, uint16_t len)
+{
+    UNUSED(len);
+    packet_process_buffer(buf, len);
     hid_send_raw(buf, 63);
 }
 
