@@ -8,6 +8,7 @@
 #include "record.h"
 #include "driver.h"
 #include "packet.h"
+#include "analog.h"
 
 #include "stdio.h"
 #include "string.h"
@@ -421,14 +422,14 @@ __WEAK void keyboard_reset_to_default(void)
     for (uint8_t i = 0; i < ADVANCED_KEY_NUM; i++)
     {
         g_keyboard_advanced_keys[i].config.mode = DEFAULT_ADVANCED_KEY_MODE;
-        g_keyboard_advanced_keys[i].config.trigger_distance = A_ANIT_NORM(DEFAULT_TRIGGER_DISTANCE);
-        g_keyboard_advanced_keys[i].config.release_distance = A_ANIT_NORM(DEFAULT_RELEASE_DISTANCE);
-        g_keyboard_advanced_keys[i].config.activation_value = A_ANIT_NORM(DEFAULT_ACTIVATION_VALUE);
-        g_keyboard_advanced_keys[i].config.deactivation_value = A_ANIT_NORM(DEFAULT_DEACTIVATION_VALUE);
+        g_keyboard_advanced_keys[i].config.trigger_distance = A_ANTI_NORM(DEFAULT_TRIGGER_DISTANCE);
+        g_keyboard_advanced_keys[i].config.release_distance = A_ANTI_NORM(DEFAULT_RELEASE_DISTANCE);
+        g_keyboard_advanced_keys[i].config.activation_value = A_ANTI_NORM(DEFAULT_ACTIVATION_VALUE);
+        g_keyboard_advanced_keys[i].config.deactivation_value = A_ANTI_NORM(DEFAULT_DEACTIVATION_VALUE);
         g_keyboard_advanced_keys[i].config.calibration_mode = DEFAULT_CALIBRATION_MODE;
         advanced_key_set_deadzone(g_keyboard_advanced_keys + i, 
-            A_ANIT_NORM(DEFAULT_UPPER_DEADZONE), 
-            A_ANIT_NORM(DEFAULT_LOWER_DEADZONE));
+            A_ANTI_NORM(DEFAULT_UPPER_DEADZONE), 
+            A_ANTI_NORM(DEFAULT_LOWER_DEADZONE));
     }
 #ifdef RGB_ENABLE
     rgb_factory_reset();
@@ -613,7 +614,7 @@ __WEAK void keyboard_task(void)
     for (uint16_t i = 0; i < ADVANCED_KEY_NUM; i++)
     {
         AdvancedKey*advanced_key = &g_keyboard_advanced_keys[i];
-        keyboard_advanced_key_update_raw(advanced_key, advanced_key_read(advanced_key));
+        keyboard_advanced_key_update_raw(advanced_key, advanced_key_read_raw(advanced_key));
     }
     if (g_keyboard_config.enable_report)
     {
@@ -627,7 +628,7 @@ __WEAK void keyboard_task(void)
     for (uint16_t i = 0; i < ADVANCED_KEY_NUM; i++)
     {
         AdvancedKey*advanced_key = &g_keyboard_advanced_keys[i];
-        keyboard_advanced_key_update_raw(advanced_key, advanced_key_read(advanced_key));
+        keyboard_advanced_key_update_raw(advanced_key, advanced_key_read_raw(advanced_key));
     }
 #endif
 #ifdef MACRO_ENABLE

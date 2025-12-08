@@ -95,8 +95,8 @@ void nexus_process_buffer(uint8_t slave_id, uint8_t *buf, uint16_t len)
     }
 #if NEXUS_USE_RAW
     uint16_t* raw_values = (uint16_t*)buf;
-    nexus_slave_raw_values[0] = buf[0] & 0x7F + ((buf[1]&0x7F)<<7);
-    for (int i = 0; i < g_nexus_slave_configs[slave_id].length; i++)
+    nexus_slave_raw_values[g_nexus_slave_configs[slave_id].map[0]] = (buf[0] & 0x7F) + ((buf[1])<<7);
+    for (int i = 1; i < g_nexus_slave_configs[slave_id].length; i++)
     {
         nexus_slave_raw_values[g_nexus_slave_configs[slave_id].map[i]] = raw_values[i];
     }
@@ -119,14 +119,14 @@ int nexus_send_report(void)
 #if NEXUS_USE_RAW
     static uint8_t buffer[NEXUS_SLICE_LENGTH_MAX*sizeof(uint16_t)];
     uint16_t* raw_buffer = (uint16_t*)buffer;
-    uint16_t raw1 = advanced_key_read(&g_keyboard_advanced_keys[0]);
+    uint16_t raw1 = advanced_key_read_raw(&g_keyboard_advanced_keys[0]);
     buffer[0] = raw1 & 0x7F;
     buffer[0] |= 0x80;
     buffer[1] = raw1 >> 7;
     for (int i = 1; i < ADVANCED_KEY_NUM; i++)
     {
         AdvancedKey* advanced_key = &g_keyboard_advanced_keys[i];
-        raw_buffer[i] = advanced_key_read(advanced_key);
+        raw_buffer[i] = advanced_key_read_raw(advanced_key);
     }
     return nexus_report(buffer, sizeof(buffer));
 #else

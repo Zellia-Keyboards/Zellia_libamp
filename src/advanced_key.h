@@ -41,7 +41,7 @@ typedef int16_t AnalogRawValue;
 #define ANALOG_VALUE_ANTI_NORMALIZE(x) ((AnalogValue)(((float)(x))*ANALOG_VALUE_RANGE))
 
 #define A_NORM ANALOG_VALUE_NORMALIZE
-#define A_ANIT_NORM ANALOG_VALUE_ANTI_NORMALIZE
+#define A_ANTI_NORM ANALOG_VALUE_ANTI_NORMALIZE
 
 #define IS_ADVANCED_KEY(key) (((Key*)(key))->id < ADVANCED_KEY_NUM)
 
@@ -100,7 +100,6 @@ AnalogValue advanced_key_normalize(AdvancedKey *advanced_key, AnalogRawValue val
 void advanced_key_set_range(AdvancedKey *advanced_key, AnalogRawValue upper, AnalogRawValue lower);
 void advanced_key_reset_range(AdvancedKey* advanced_key, AnalogRawValue value);
 void advanced_key_set_deadzone(AdvancedKey *advanced_key, AnalogValue upper, AnalogValue lower);
-AnalogRawValue advanced_key_read(AdvancedKey *advanced_key);
 AnalogRawValue advanced_key_read_raw(AdvancedKey *advanced_key);
 AnalogValue advanced_key_get_effective_value(AdvancedKey *advanced_key);
 
