@@ -84,6 +84,10 @@ extern "C" {
 #define RGB_GAMMA 2.2f
 #endif
 
+#ifndef RGB_BASE_MODE_USE_PIXEL_RAIN
+#define RGB_BASE_MODE_USE_PIXEL_RAIN 1
+#endif
+
 #ifndef RGB_ARGUMENT_BUFFER_LENGTH
 #define RGB_ARGUMENT_BUFFER_LENGTH 64
 #endif
@@ -103,6 +107,7 @@ typedef enum __RGBBaseMode
     RGB_BASE_MODE_BLANK,
     RGB_BASE_MODE_RAINBOW,
     RGB_BASE_MODE_WAVE,
+    RGB_BASE_MODE_PIXEL_RAIN,
 } RGBBaseMode;
 
 typedef struct __RGBBaseConfig

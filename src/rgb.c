@@ -35,6 +35,33 @@ static RGBArgumentListNode RGB_Argument_List_Buffer[RGB_ARGUMENT_LIST_BUFFER_LEN
 static RGBLoopQueue rgb_argument_queue;
 static RGBLoopQueueElm RGB_Argument_Buffer[RGB_ARGUMENT_BUFFER_LENGTH];
 
+#if RGB_BASE_MODE_USE_PIXEL_RAIN
+static uint16_t pixel_rain_index = 0;
+static uint32_t pixel_rain_timer = 0;
+static uint32_t pixel_rain_seed = 12345;
+
+static uint32_t pixel_rain_random(void)
+{
+    pixel_rain_seed = pixel_rain_seed * 1103515245 + 12345;
+    return (pixel_rain_seed >> 16) & 0x7FFF;
+}
+
+static uint8_t pixel_rain_random8(void)
+{
+    return (uint8_t)(pixel_rain_random() & 0xFF);
+}
+
+static uint8_t pixel_rain_random8_max(uint8_t max)
+{
+    return pixel_rain_random8() % max;
+}
+
+static uint8_t pixel_rain_random8_min_max(uint8_t min, uint8_t max)
+{
+    return min + (pixel_rain_random8() % (max - min));
+}
+#endif
+
 void rgb_init(void)
 {
 #ifdef RGB_USE_LIST_EXPERIMENTAL
@@ -73,7 +100,16 @@ void rgb_update(void)
     ColorRGB temp_rgb;
     float intensity;
     UNUSED(temp_hsv);
+    
+#if RGB_BASE_MODE_USE_PIXEL_RAIN
+    // Pixel rain needs to preserve previous LED states
+    if (g_rgb_base_config.mode != RGB_BASE_MODE_PIXEL_RAIN)
+    {
+        memset(g_rgb_colors, 0, sizeof(g_rgb_colors));
+    }
+#else
     memset(g_rgb_colors, 0, sizeof(g_rgb_colors));
+#endif
     
     switch (g_rgb_base_config.mode)
     {
@@ -117,6 +153,46 @@ void rgb_update(void)
                 temp_rgb.g = (uint8_t)(intensity * ((float)(g_rgb_base_config.rgb.g)) + secondary_intensity * ((float)(g_rgb_base_config.secondary_rgb.g)));
                 temp_rgb.b = (uint8_t)(intensity * ((float)(g_rgb_base_config.rgb.b)) + secondary_intensity * ((float)(g_rgb_base_config.secondary_rgb.b)));
                 color_mix(&g_rgb_colors[i], &temp_rgb);
+            }
+        }
+        break;
+#endif
+#if RGB_BASE_MODE_USE_PIXEL_RAIN
+    case RGB_BASE_MODE_PIXEL_RAIN:
+        {
+            // Seed randomness with keyboard tick on first run
+            if (pixel_rain_timer == 0)
+            {
+                pixel_rain_seed = g_keyboard_tick;
+                pixel_rain_index = pixel_rain_random8_max(RGB_NUM);
+            }
+            
+            if (pixel_rain_timer < g_keyboard_tick)
+            {
+                // 50% chance: random color or turn off
+                if (pixel_rain_random8() & 2)
+                {
+                    // Turn off this LED
+                    g_rgb_colors[pixel_rain_index].r = 0;
+                    g_rgb_colors[pixel_rain_index].g = 0;
+                    g_rgb_colors[pixel_rain_index].b = 0;
+                }
+                else
+                {
+                    // Random HSV color
+                    temp_hsv.h = pixel_rain_random8() * 360 / 255;
+                    temp_hsv.s = pixel_rain_random8_min_max(50, 100);
+                    temp_hsv.v = g_rgb_base_config.hsv.v;
+                    color_set_hsv(&temp_rgb, &temp_hsv);
+                    g_rgb_colors[pixel_rain_index] = temp_rgb;
+                }
+                
+                // Pick next random LED and set timer
+                pixel_rain_index = pixel_rain_random8_max(RGB_NUM);
+                // Delay scales with speed: faster speed = shorter delay
+                // Range: ~50ms to ~500ms based on speed (0.0 - 1.0)
+                uint32_t delay = (uint32_t)(500.0f - 450.0f * g_rgb_base_config.speed);
+                pixel_rain_timer = g_keyboard_tick + delay;
             }
         }
         break;
