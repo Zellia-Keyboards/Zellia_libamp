@@ -8,13 +8,14 @@
 #include "driver.h"
 #include "string.h"
 #include "storage.h"
+#include "analog.h"
 
 #define NEXUS_TIMEOUT  POLLING_RATE
 
 static bool slave_flags[NEXUS_SLAVE_NUM];
 static uint32_t slave_bitmap[NEXUS_SLAVE_NUM][(NEXUS_SLICE_LENGTH_MAX+31)/32];
 #if NEXUS_USE_RAW
-static AnalogRawValue nexus_slave_raw_values[ADVANCED_KEY_NUM];
+AnalogRawValue nexus_slave_raw_values[85];
 #endif
 uint8_t g_nexus_slave_buffer[NEXUS_SLAVE_NUM][NEXUS_BUFFER_SIZE];
 
@@ -65,7 +66,7 @@ void nexus_process(void)
     for (uint16_t i = 0; i < ADVANCED_KEY_NUM; i++)
     {
         AdvancedKey*advanced_key = &g_keyboard_advanced_keys[i];
-        keyboard_advanced_key_update_raw(advanced_key, nexus_slave_raw_values[i]);
+        keyboard_advanced_key_update_raw(advanced_key, nexus_slave_raw_values[g_analog_map[i]]/4);
     }
 #else
     for (uint8_t slave_id = 0; slave_id < NEXUS_SLAVE_NUM; slave_id++)
