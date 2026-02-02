@@ -8,13 +8,14 @@
 #include "driver.h"
 #include "string.h"
 #include "storage.h"
+#include "analog.h"
 
 #define NEXUS_TIMEOUT  POLLING_RATE
 
 static bool slave_flags[NEXUS_SLAVE_NUM];
 static uint32_t slave_bitmap[NEXUS_SLAVE_NUM][(NEXUS_SLICE_LENGTH_MAX+31)/32];
 #if NEXUS_USE_RAW
-static AnalogRawValue nexus_slave_raw_values[ADVANCED_KEY_NUM];
+AnalogRawValue nexus_slave_raw_values[85];
 #endif
 uint8_t g_nexus_slave_buffer[NEXUS_SLAVE_NUM][NEXUS_BUFFER_SIZE];
 
@@ -26,7 +27,12 @@ static inline void nexus_config_slave(uint8_t slave_id)
     const uint16_t length = g_nexus_slave_configs[slave_id].length;
     for (int i = 0; i < length; i++)
     {
-        AdvancedKey *key = &g_keyboard_advanced_keys[g_nexus_slave_configs[slave_id].map[i]];
+        const uint16_t key_index = g_nexus_slave_configs[slave_id].map[i];
+        AdvancedKey *key = (AdvancedKey *)keyboard_get_key(key_index);
+        if (key == NULL || !IS_ADVANCED_KEY(key))
+        {
+            continue;
+        }
         PacketAdvancedKey *packet = (PacketAdvancedKey *)buffer;
         memset(buffer, 0, sizeof(packet));
         packet->code = PACKET_CODE_SET;
@@ -65,7 +71,7 @@ void nexus_process(void)
     for (uint16_t i = 0; i < ADVANCED_KEY_NUM; i++)
     {
         AdvancedKey*advanced_key = &g_keyboard_advanced_keys[i];
-        keyboard_advanced_key_update_raw(advanced_key, nexus_slave_raw_values[i]);
+        keyboard_advanced_key_update_raw(advanced_key, nexus_slave_raw_values[g_analog_map[i]]);
     }
 #else
     for (uint8_t slave_id = 0; slave_id < NEXUS_SLAVE_NUM; slave_id++)
@@ -75,6 +81,10 @@ void nexus_process(void)
             const bool state = BIT_GET(slave_bitmap[slave_id][j/32], j%32);
             const uint16_t index = g_nexus_slave_configs[slave_id].map[j];
             Key* key = keyboard_get_key(index);
+            if (key == NULL)
+            {
+                continue;
+            }
             keyboard_key_update(key, state);
         }
     }
@@ -98,13 +108,21 @@ void nexus_process_buffer(uint8_t slave_id, uint8_t *buf, uint16_t len)
     nexus_slave_raw_values[g_nexus_slave_configs[slave_id].map[0]] = (buf[0] & 0x7F) + ((buf[1])<<7);
     for (int i = 1; i < g_nexus_slave_configs[slave_id].length; i++)
     {
-        nexus_slave_raw_values[g_nexus_slave_configs[slave_id].map[i]] = raw_values[i];
+        if (g_nexus_slave_configs[slave_id].map[i] < TOTAL_KEY_NUM)
+        {
+            nexus_slave_raw_values[g_nexus_slave_configs[slave_id].map[i]] = raw_values[i];
+        }
     }
 #else
     PacketNexus* packet = (PacketNexus*)buf;
     uint16_t index = packet->index & 0x7f;
     memcpy(&slave_bitmap[slave_id], packet->bits, (g_nexus_slave_configs[slave_id].length+7)/8);
-    Key* key = keyboard_get_key(g_nexus_slave_configs[slave_id].map[index]);
+    const uint16_t key_index = g_nexus_slave_configs[slave_id].map[index];
+    Key* key = keyboard_get_key(key_index);
+    if (key==NULL)
+    {
+        return;
+    }
     if (IS_ADVANCED_KEY(key))
     {
         ((AdvancedKey*)key)->raw = packet->raw;
@@ -181,6 +199,7 @@ int nexus_send_timeout(uint8_t slave_id, const uint8_t *report, uint16_t len, ui
         count++;
         if (count > 10000)
         {
+            //printf("retry_count%d\n",retry_count);
             count = 0;
             retry_count++;
             if (retry_count > NEXUS_RETRY_COUNT)
