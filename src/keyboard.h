@@ -33,6 +33,10 @@ extern "C" {
 #define KEYBOARD_VERSION_INFO  LIBAMP_VERSION_INFO
 #endif
 
+#ifndef LAYER_NUM
+#define LAYER_NUM 1
+#endif
+
 #ifndef POLLING_RATE
 #define POLLING_RATE 1000
 #endif
@@ -205,7 +209,7 @@ void keyboard_fill_buffer(void);
 void keyboard_send_report(void);
 void keyboard_recovery(void);
 void keyboard_save(void);
-void keyboard_set_config_index(uint8_t index);
+void keyboard_set_profile_index(uint8_t index);
 void keyboard_task(void);
 void keyboard_delay(uint32_t ms);
 
@@ -226,7 +230,14 @@ static inline bool keyboard_key_set_report_state(Key*key, bool state)
     key->report_state = state;
     const uint32_t index = key->id / 32;
     const uint32_t mask = 1U << (key->id % 32);
-    g_keyboard_bitmap[index] ^= mask;
+    if (state)
+    {
+        g_keyboard_bitmap[index] |= mask;
+    } 
+    else
+    {
+        g_keyboard_bitmap[index] &= ~mask;
+    }
     return true;
 }
 

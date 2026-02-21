@@ -18,20 +18,26 @@ enum {
   PACKET_CODE_SET = 0x01,
   PACKET_CODE_GET = 0x02,
   PACKET_CODE_LOG = 0x03,
+  PACKET_CODE_LARGE_SET = 0x04,
+  PACKET_CODE_LARGE_GET = 0x05,
   PACKET_CODE_USER = 0xFF,
 };
 
 enum {
-  PACKET_DATA_ADVANCED_KEY = 0x00,
-  PACKET_DATA_KEYMAP = 0x01,
-  PACKET_DATA_RGB_BASE_CONFIG = 0x02,
-  PACKET_DATA_RGB_CONFIG = 0x03,
-  PACKET_DATA_DYNAMIC_KEY = 0x04,
-  PACKET_DATA_CONFIG_INDEX = 0x05,
-  PACKET_DATA_CONFIG = 0x06,
-  PACKET_DATA_DEBUG = 0x07,
-  PACKET_DATA_REPORT = 0x08,
-  PACKET_DATA_VERSION = 0x09,
+  PACKET_DATA_VERSION = 0x00,
+  PACKET_DATA_ADVANCED_KEY = 0x01,
+  PACKET_DATA_KEYMAP = 0x02,
+  PACKET_DATA_RGB_BASE_CONFIG = 0x03,
+  PACKET_DATA_RGB_CONFIG = 0x04,
+  PACKET_DATA_DYNAMIC_KEY = 0x05,
+  PACKET_DATA_PROFILE_INDEX = 0x06,
+  PACKET_DATA_CONFIG = 0x07,
+  PACKET_DATA_DEBUG = 0x08,
+  PACKET_DATA_REPORT = 0x09,
+  PACKET_DATA_MACRO = 0x0A,
+  PACKET_DATA_FEATURE = 0x0B,
+  PACKET_DATA_SCRIPT_SCOURCE = 0x0C,
+  PACKET_DATA_SCRIPT_BYTECODE = 0x0D,
 };
 
 typedef struct __PacketBase
@@ -179,6 +185,54 @@ typedef struct __PacketVersion
   uint8_t info[];
 } __PACKED PacketVersion;
 
+typedef struct __PacketMacro
+{
+  uint8_t code;
+  uint8_t type;
+  uint8_t macro_index;
+  uint16_t length;
+  struct
+  {
+    uint32_t delay;
+    uint16_t index;
+    uint16_t key_id;
+    uint8_t is_virtual;
+    uint8_t event;
+    uint16_t keycode;
+  } __PACKED data[];
+} __PACKED PacketMacro;
+
+typedef struct __PacketFeature
+{
+  uint8_t code;
+  uint8_t type;
+  uint32_t features;
+  uint32_t rgb_features;
+  uint8_t script_support;
+} __PACKED PacketFeature;
+
+typedef struct __PacketLargeData
+{
+    uint8_t code;
+    uint8_t type;
+    uint8_t sub_cmd;
+
+    union
+    {
+        struct
+        {
+            uint32_t total_size;
+            uint32_t checksum;
+        } __PACKED header;
+        struct
+        {
+            uint32_t offset;
+            uint16_t length;
+            uint8_t  data[];
+        } __PACKED payload;
+    };
+} __PACKED PacketLargeData;
+
 typedef struct __PacketLog
 {
   uint8_t code;
@@ -194,10 +248,13 @@ void packet_process_rgb_base_config(PacketData*data);
 void packet_process_rgb_config(PacketData*data);
 void packet_process_keymap(PacketData*data);
 void packet_process_dynamic_key(PacketData*data);
-void packet_process_config_index(PacketData*data);
+void packet_process_profile_index(PacketData*data);
 void packet_process_config(PacketData*data);
 void packet_process_debug(PacketData*data);
+void packet_process_macro(PacketData*data);
+void packet_process_feature(PacketData*data);
 void packet_process_user(uint8_t *buf, uint16_t len);
+void large_packet_process(PacketLargeData *buf);
 
 #ifdef __cplusplus
 }

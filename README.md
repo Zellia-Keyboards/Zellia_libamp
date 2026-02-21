@@ -38,16 +38,19 @@ git submodule update --init --recursive
 
 Add your custom `keyboard_conf.h` and include it in your build:
 ```cmake
+# Define user config header directory
+# This folder contains keyboard_conf.h
+set(LIBAMP_INCLUDE_DIR ${CMAKE_SOURCE_DIR}/libamp_user)
+# Then add subdirectory
 add_subdirectory(libamp)
-target_include_directories(libamp PUBLIC ./libamp_user/)
-target_link_libraries(${CMAKE_PROJECT_NAME} libamp)
+# Don't forget to link library
+target_link_libraries(${CMAKE_PROJECT_NAME}
+    libamp
+)
 ```
 
-### Example Usage
-See `src/keyboard.c` for main event handling and integration examples. For analog key configuration, refer to `src/advanced_key.c` and `src/advanced_key.h`.
+## Test
 
-## Testing
-Build and run unit tests:
 ```bash
 git clone https://github.com/Zellia-Keyboards/zellia_libamp.git --recursive
 cd zellia_libamp

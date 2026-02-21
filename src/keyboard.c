@@ -45,6 +45,10 @@
 #ifdef NEXUS_ENABLE
 #include "nexus.h"
 #endif
+#ifdef SCRIPT_ENABLE
+#include "script.h"
+#endif
+#include "event_buffer.h"
 
 __WEAK AdvancedKey g_keyboard_advanced_keys[ADVANCED_KEY_NUM];
 __WEAK Key g_keyboard_keys[KEY_NUM];
@@ -65,26 +69,41 @@ static Keyboard_6KROBuffer keyboard_6kro_buffer;
 
 volatile uint32_t g_keyboard_bitmap[KEY_BITMAP_SIZE];
 
-void keyboard_event_handler(KeyboardEvent event)
+
+void keyboard_keycode_event_handler(KeyboardEvent event)
 {
-    Key* key = (Key*)event.key;
-#ifdef MACRO_ENABLE
-    macro_record_handler(event);
-#endif
     switch (event.event)
     {
     case KEYBOARD_EVENT_KEY_DOWN:
-        layer_lock(key->id);
+        if (!event.is_virtual)
+        {    
+            keyboard_key_event_down_callback((Key*)event.key);
+        }
+        g_keyboard_report_flags.keyboard = true;
         break;
     case KEYBOARD_EVENT_KEY_TRUE:
         break;
     case KEYBOARD_EVENT_KEY_UP:
-        layer_unlock(key->id);
+        g_keyboard_report_flags.keyboard = true;
         break;
     case KEYBOARD_EVENT_KEY_FALSE:
         break;
     default:
         break;
+    }
+}
+
+void keyboard_event_handler(KeyboardEvent event)
+{
+#ifdef SCRIPT_ENABLE
+    script_event_handler(event);
+#endif
+#ifdef MACRO_ENABLE
+    macro_record_handler(event);
+#endif
+    if (!event.is_virtual)
+    {
+        layer_lock_handler(event);
     }
     switch (KEYCODE_GET_MAIN(event.keycode))
     {
@@ -115,8 +134,13 @@ void keyboard_event_handler(KeyboardEvent event)
         macro_event_handler(event);
         break;
 #endif
+#ifdef SCRIPT_ENABLE
+    case SCRIPT_COLLECTION:
+        script_event_handler(event);
+        break;
+#endif
     case LAYER_CONTROL:
-        layer_control(event);
+        layer_event_handler(event);
         break;
     case KEYBOARD_OPERATION:
         keyboard_operation_event_handler(event);
@@ -125,28 +149,28 @@ void keyboard_event_handler(KeyboardEvent event)
         keyboard_user_event_handler(event);
         break;
     default:
-        switch (event.event)
-        {
-        case KEYBOARD_EVENT_KEY_DOWN:
-            keyboard_key_event_down_callback(key);
-            g_keyboard_report_flags.keyboard = true;
-            break;
-        case KEYBOARD_EVENT_KEY_TRUE:
-            break;
-        case KEYBOARD_EVENT_KEY_UP:
-            g_keyboard_report_flags.keyboard = true;
-            break;
-        case KEYBOARD_EVENT_KEY_FALSE:
-            break;
-        default:
-            break;
-        }
+        keyboard_keycode_event_handler(event);
         break;
     }
 }
 
 void keyboard_add_buffer(KeyboardEvent event)
 {
+    const uint8_t keycode = KEYCODE_GET_MAIN(event.keycode);
+    if (keycode <= KEY_EXSEL)
+    {
+#ifdef NKRO_ENABLE
+        if (g_keyboard_config.nkro)
+        {
+            keyboard_NKRObuffer_add(&keyboard_nkro_buffer, event.keycode);
+        }
+        else
+#endif
+        {
+            keyboard_6KRObuffer_add(&keyboard_6kro_buffer, event.keycode);
+        }
+        return;
+    }
     switch (KEYCODE_GET_MAIN(event.keycode))
     {
 #ifdef MOUSE_ENABLE
@@ -172,23 +196,7 @@ void keyboard_add_buffer(KeyboardEvent event)
     case KEY_USER:
         break;
     default:
-    {
-        const uint8_t keycode = KEYCODE_GET_MAIN(event.keycode);
-        if (keycode <= KEY_EXSEL)
-        {
-#ifdef NKRO_ENABLE
-            if (g_keyboard_config.nkro)
-            {
-                keyboard_NKRObuffer_add(&keyboard_nkro_buffer, event.keycode);
-            }
-            else
-#endif
-            {
-                keyboard_6KRObuffer_add(&keyboard_6kro_buffer, event.keycode);
-            }
-        }
         break;
-    }
     }
 }
 
@@ -199,7 +207,10 @@ void keyboard_operation_event_handler(KeyboardEvent event)
     case KEYBOARD_EVENT_KEY_UP:
         break;
     case KEYBOARD_EVENT_KEY_DOWN:
-        keyboard_key_event_down_callback((Key*)event.key);
+        if (!event.is_virtual)
+        {
+            keyboard_key_event_down_callback((Key*)event.key);
+        }
         uint8_t modifier = KEYCODE_GET_SUB(event.keycode);
         if ((modifier & 0x3F) < KEYBOARD_CONFIG_BASE)
         {
@@ -242,11 +253,11 @@ void keyboard_operation_event_handler(KeyboardEvent event)
                 }
                 break;
 #endif
-            case KEYBOARD_CONFIG0:
-            case KEYBOARD_CONFIG1:
-            case KEYBOARD_CONFIG2:
-            case KEYBOARD_CONFIG3:
-                keyboard_set_config_index((event.keycode >> 8) & 0x0F);
+            case KEYBOARD_PROFILE0:
+            case KEYBOARD_PROFILE1:
+            case KEYBOARD_PROFILE2:
+            case KEYBOARD_PROFILE3:
+                keyboard_set_profile_index((event.keycode >> 8) & 0x0F);
                 break;
             default:
                 break;
@@ -400,10 +411,20 @@ void keyboard_init(void)
     }
 #ifdef STORAGE_ENABLE
     storage_mount();
-    storage_read_config_index();
+    if (storage_check_version())
+    {
+        keyboard_factory_reset();
+    }
+    storage_read_profile_index();
 #endif
 #ifdef RGB_ENABLE
     rgb_init();
+#endif
+#if defined(MACRO_ENABLE) || defined(SCRIPT_ENABLE)
+    event_buffer_init();
+#endif
+#ifdef MACRO_ENABLE
+    macro_init();
 #endif
     keyboard_recovery();
 #ifdef NEXUS_ENABLE
@@ -412,6 +433,9 @@ void keyboard_init(void)
 #else
     nexus_init();
 #endif
+#endif
+#ifdef SCRIPT_ENABLE
+    script_init();
 #endif
 }
 
@@ -437,19 +461,22 @@ __WEAK void keyboard_reset_to_default(void)
 #ifdef DYNAMICKEY_ENABLE
     memset(g_dynamic_keys, 0, sizeof(g_dynamic_keys));
 #endif
+#ifdef SCRIPT_ENABLE
+    script_factory_reset();
+#endif
 }
 
 void keyboard_factory_reset(void)
 {
     keyboard_reset_to_default();
 #ifdef STORAGE_ENABLE
-    for (int i = 0; i < STORAGE_CONFIG_FILE_NUM; i++)
+    for (int i = 0; i < STORAGE_PROFILE_FILE_NUM; i++)
     {
-        g_current_config_index = i;
-        storage_save_config();
+        g_current_profile_index = i;
+        storage_save_profile();
     }
-    g_current_config_index = 0;
-    keyboard_set_config_index(0);
+    g_current_profile_index = 0;
+    keyboard_set_profile_index(0);
 #endif
 }
 
@@ -475,7 +502,7 @@ __WEAK void keyboard_scan(void)
 void keyboard_recovery(void)
 {
 #ifdef STORAGE_ENABLE
-    storage_read_config();
+    storage_read_profile();
 #else
     keyboard_reset_to_default();
 #endif
@@ -484,18 +511,18 @@ void keyboard_recovery(void)
 void keyboard_save(void)
 {
 #ifdef STORAGE_ENABLE
-    storage_save_config();
+    storage_save_profile();
 #endif
 }
 
-void keyboard_set_config_index(uint8_t index)
+void keyboard_set_profile_index(uint8_t index)
 {
 #ifdef STORAGE_ENABLE
-    if (index < STORAGE_CONFIG_FILE_NUM)
+    if (index < STORAGE_PROFILE_FILE_NUM)
     {
-        g_current_config_index = index;
+        g_current_profile_index = index;
     }
-    storage_save_config_index();
+    storage_save_profile_index();
 #else
     UNUSED(index);
 #endif
@@ -554,8 +581,8 @@ void keyboard_fill_buffer(void)
 #ifdef DYNAMICKEY_ENABLE
     dynamic_key_add_buffer();
 #endif
-#ifdef MACRO_ENABLE
-    macro_add_buffer();
+#if defined(MACRO_ENABLE) || defined(SCRIPT_ENABLE)
+    event_buffer_add_buffer();
 #endif
 }
 
@@ -630,6 +657,9 @@ __WEAK void keyboard_task(void)
         AdvancedKey*advanced_key = &g_keyboard_advanced_keys[i];
         keyboard_advanced_key_update_raw(advanced_key, advanced_key_read_raw(advanced_key));
     }
+#endif
+#ifdef SCRIPT_ENABLE
+    script_process();
 #endif
 #ifdef MACRO_ENABLE
     macro_process();

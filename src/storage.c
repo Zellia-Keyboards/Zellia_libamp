@@ -9,6 +9,9 @@
 #ifdef RGB_ENABLE
 #include"rgb.h"
 #endif
+#ifdef SCRIPT_ENABLE
+#include"script.h"
+#endif
 
 #ifndef STORAGE_FLASH_BASE_ADDRESS
 #define STORAGE_FLASH_BASE_ADDRESS 0x00000000
@@ -56,7 +59,7 @@
 #define STORAGE_CONFIG_FILE_SIZE (STORAGE_ADVANCED_KEY_CONFIG_SIZE + STORAGE_KEYMAP_SIZE + STORAGE_RGB_CONFIG_SIZE + STORAGE_DYNAMIC_KEY_CONFIG_SIZE)
 #define STORAGE_CONFIG_FILE_ADDRESS(n) (STORAGE_FLASH_BASE_ADDRESS + STORAGE_FLASH_RESERVED_SIZE + ((n) * sizeof(STORAGE_CONFIG_FILE_SIZE)))
 
-uint8_t g_current_config_index = 0;
+uint8_t g_current_profile_index = 0;
 
 static int lfs_flash_read(const struct lfs_config *c, lfs_block_t block, lfs_off_t off, void *buffer, lfs_size_t size)
 {
@@ -116,17 +119,17 @@ lfs_t * storage_get_lfs(void)
 #ifndef LFS_ENABLE
 static inline int config_file_read(uint8_t *buffer, uint32_t size, uint32_t offset)
 {
-    return flash_read(STORAGE_CONFIG_FILE_ADDRESS(g_current_config_index) + offset, size, buffer);
+    return flash_read(STORAGE_CONFIG_FILE_ADDRESS(g_current_profile_index) + offset, size, buffer);
 }
 
 static inline int config_file_write(const uint8_t *buffer, uint32_t size, uint32_t offset)
 {
-    int res = flash_erase(STORAGE_CONFIG_FILE_ADDRESS(g_current_config_index) + offset, size);
+    int res = flash_erase(STORAGE_CONFIG_FILE_ADDRESS(g_current_profile_index) + offset, size);
     if (res)
     {
         return res;
     }
-    return flash_write(STORAGE_CONFIG_FILE_ADDRESS(g_current_config_index) + offset, size, buffer);
+    return flash_write(STORAGE_CONFIG_FILE_ADDRESS(g_current_profile_index) + offset, size, buffer);
 }
 #endif
 
@@ -215,6 +218,40 @@ int storage_mount(void)
 #endif
 }
 
+int storage_check_version(void)
+{
+#ifdef LFS_ENABLE
+    lfs_file_t lfs_file;
+    uint32_t version[3] = {0};
+    bool need_factory_reset = false;
+    bool need_update = false;
+    lfs_file_open(&_lfs, &lfs_file, "version", LFS_O_RDWR | LFS_O_CREAT);
+    lfs_file_rewind(&_lfs, &lfs_file);
+    lfs_file_read(&_lfs, &lfs_file, &version, sizeof(version));
+    if (version[0] != KEYBOARD_VERSION_MAJOR || version[1] != KEYBOARD_VERSION_MINOR)
+    {
+        version[0] = KEYBOARD_VERSION_MAJOR;
+        version[1] = KEYBOARD_VERSION_MINOR;
+        need_factory_reset = true;
+        need_update = true;
+    }
+    if (version[2] != KEYBOARD_VERSION_PATCH)
+    {
+        version[2] = KEYBOARD_VERSION_PATCH;
+        need_update = true;
+    }
+    if (need_update)
+    {
+        lfs_file_rewind(&_lfs, &lfs_file);
+        lfs_file_write(&_lfs, &lfs_file, &version, sizeof(version));
+    }
+    lfs_file_close(&_lfs, &lfs_file);
+    return need_factory_reset;
+#else
+    return 0;
+#endif
+}
+
 void storage_unmount(void)
 {
 #ifdef LFS_ENABLE
@@ -222,45 +259,45 @@ void storage_unmount(void)
 #endif
 }
 
-uint8_t storage_read_config_index(void)
+uint8_t storage_read_profile_index(void)
 {
 #ifdef LFS_ENABLE
     lfs_file_t lfs_file;
     uint8_t index = 0;
-    lfs_file_open(&_lfs, &lfs_file, "config_index", LFS_O_RDWR | LFS_O_CREAT);
+    lfs_file_open(&_lfs, &lfs_file, "profile_index", LFS_O_RDWR | LFS_O_CREAT);
     lfs_file_rewind(&_lfs, &lfs_file);
     lfs_file_read(&_lfs, &lfs_file, &index, sizeof(index));
     lfs_file_close(&_lfs, &lfs_file);
-    if (index >= STORAGE_CONFIG_FILE_NUM)
+    if (index >= STORAGE_PROFILE_FILE_NUM)
     {
         index = 0;
     }
-    g_current_config_index = index;
+    g_current_profile_index = index;
     return index;
 #else
-    flash_read(STORAGE_FLASH_BASE_ADDRESS, sizeof(g_current_config_index), (uint8_t *)&g_current_config_index);
+    flash_read(STORAGE_FLASH_BASE_ADDRESS, sizeof(g_current_profile_index), (uint8_t *)&g_current_profile_index);
 #endif
 }
 
-void storage_save_config_index(void)
+void storage_save_profile_index(void)
 {
 #ifdef LFS_ENABLE
     lfs_file_t lfs_file;
-    lfs_file_open(&_lfs, &lfs_file, "config_index", LFS_O_RDWR | LFS_O_CREAT);
+    lfs_file_open(&_lfs, &lfs_file, "profile_index", LFS_O_RDWR | LFS_O_CREAT);
     lfs_file_rewind(&_lfs, &lfs_file);
-    lfs_file_write(&_lfs, &lfs_file, &g_current_config_index, sizeof(g_current_config_index));
+    lfs_file_write(&_lfs, &lfs_file, &g_current_profile_index, sizeof(g_current_profile_index));
     lfs_file_close(&_lfs, &lfs_file);
 #else
-    flash_write(STORAGE_FLASH_BASE_ADDRESS, sizeof(g_current_config_index), (uint8_t *)&g_current_config_index);
+    flash_write(STORAGE_FLASH_BASE_ADDRESS, sizeof(g_current_profile_index), (uint8_t *)&g_current_profile_index);
 #endif
 }
 
-void storage_read_config(void)
+void storage_read_profile(void)
 {
 #ifdef LFS_ENABLE
     lfs_file_t lfs_file;
-    char config_file_name[8] = "config0";
-    config_file_name[6] = g_current_config_index + '0';
+    char config_file_name[16] = "profile0";
+    config_file_name[6] = g_current_profile_index + '0';
 
     lfs_file_open(&_lfs, &lfs_file, config_file_name, LFS_O_RDWR | LFS_O_CREAT);
     lfs_file_rewind(&_lfs, &lfs_file);
@@ -337,12 +374,12 @@ void storage_read_config(void)
 #endif
 }
 
-void storage_save_config(void)
+void storage_save_profile(void)
 {
 #ifdef LFS_ENABLE
     lfs_file_t lfs_file;
-    char config_file_name[8] = "config0";
-    config_file_name[6] = g_current_config_index + '0';
+    char config_file_name[16] = "profile0";
+    config_file_name[6] = g_current_profile_index + '0';
 
     lfs_file_open(&_lfs, &lfs_file, config_file_name, LFS_O_RDWR | LFS_O_CREAT);
     lfs_file_rewind(&_lfs, &lfs_file);
@@ -418,6 +455,51 @@ void storage_save_config(void)
         }
         offset += sizeof(DynamicKey);
     }
+#endif
+#endif
+}
+
+void storage_save_script(void)
+{
+#ifdef SCRIPT_ENABLE
+#if SCRIPT_RUNTIME_STRATEGY == SCRIPT_AOT
+    lfs_file_t lfs_file;
+    const char *js_file_name = "main.bin";
+    lfs_file_open(&_lfs, &lfs_file, js_file_name, LFS_O_RDWR | LFS_O_CREAT);
+    lfs_file_rewind(&_lfs, &lfs_file);
+    lfs_file_write(&_lfs, &lfs_file, g_script_bytecode_buffer, sizeof(g_script_bytecode_buffer));
+    lfs_file_close(&_lfs, &lfs_file);
+#endif
+#if SCRIPT_RUNTIME_STRATEGY == SCRIPT_JIT
+    lfs_file_t lfs_file;
+    const char *js_file_name = "main.js";
+    lfs_file_open(&_lfs, &lfs_file, js_file_name, LFS_O_RDWR | LFS_O_CREAT);
+    lfs_file_rewind(&_lfs, &lfs_file);
+    lfs_file_write(&_lfs, &lfs_file, g_script_source_buffer, sizeof(g_script_source_buffer));
+    lfs_file_close(&_lfs, &lfs_file);
+#endif
+#endif
+}
+
+
+void storage_read_script(void)
+{
+#ifdef SCRIPT_ENABLE
+#if SCRIPT_RUNTIME_STRATEGY == SCRIPT_AOT
+    lfs_file_t lfs_file;
+    const char *js_file_name = "main.bin";
+    lfs_file_open(&_lfs, &lfs_file, js_file_name, LFS_O_RDWR | LFS_O_CREAT);
+    lfs_file_rewind(&_lfs, &lfs_file);
+    lfs_file_read(&_lfs, &lfs_file, g_script_bytecode_buffer, sizeof(g_script_bytecode_buffer));
+    lfs_file_close(&_lfs, &lfs_file);
+#endif
+#if SCRIPT_RUNTIME_STRATEGY == SCRIPT_JIT
+    lfs_file_t lfs_file;
+    const char *js_file_name = "main.js";
+    lfs_file_open(&_lfs, &lfs_file, js_file_name, LFS_O_RDWR | LFS_O_CREAT);
+    lfs_file_rewind(&_lfs, &lfs_file);
+    lfs_file_read(&_lfs, &lfs_file, g_script_source_buffer, sizeof(g_script_source_buffer));
+    lfs_file_close(&_lfs, &lfs_file);
 #endif
 #endif
 }

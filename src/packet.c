@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024 Zhangqi Li (@zhangqili)
+ * Copyright (c) 2025 Zhangqi Li (@zhangqili)
  *
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
@@ -9,6 +9,9 @@
 #include "driver.h"
 
 #include "string.h"
+#ifdef MACRO_ENABLE
+#include "macro.h"
+#endif
 
 static inline void command_advanced_key_config_normalize(AdvancedKeyConfigurationNormalized* buffer, AdvancedKeyConfiguration* config)
 {
@@ -79,14 +82,22 @@ void packet_process_buffer(uint8_t *buf, uint16_t len)
             packet_process_dynamic_key(packet);
             break;
 #endif
-        case PACKET_DATA_CONFIG_INDEX:
-            packet_process_config_index(packet);
+        case PACKET_DATA_PROFILE_INDEX:
+            packet_process_profile_index(packet);
             break;
         case PACKET_DATA_CONFIG:
             packet_process_config(packet);
             break;
         case PACKET_DATA_DEBUG:
             packet_process_debug(packet);
+            break;
+#ifdef MACRO_ENABLE
+        case PACKET_DATA_MACRO:
+            packet_process_macro(packet);
+            break;
+#endif
+        case PACKET_DATA_FEATURE:
+            packet_process_feature(packet);
             break;
         case PACKET_DATA_VERSION:
             if (packet->code == PACKET_CODE_GET)
@@ -105,7 +116,11 @@ void packet_process_buffer(uint8_t *buf, uint16_t len)
         }
         break;
     case PACKET_CODE_ACTION:
-        keyboard_operation_event_handler(MK_EVENT(((((PacketBase*)packet)->buf[0]) << 8) | KEYBOARD_OPERATION, KEYBOARD_EVENT_KEY_DOWN, NULL));
+        keyboard_operation_event_handler(MK_VIRTUAL_EVENT(((((PacketBase*)packet)->buf[0]) << 8) | KEYBOARD_OPERATION, KEYBOARD_EVENT_KEY_DOWN, NULL));
+        break;
+    case PACKET_CODE_LARGE_SET:
+    case PACKET_CODE_LARGE_GET:
+        large_packet_process((PacketLargeData*)buf);
         break;
     default:
         packet_process_user(buf, len);
@@ -271,16 +286,16 @@ void packet_process_dynamic_key(PacketData*data)
     }
 }
 
-void packet_process_config_index(PacketData*data)
+void packet_process_profile_index(PacketData*data)
 {
     PacketConfigIndex* packet = (PacketConfigIndex*)data;
     if (data->code == PACKET_CODE_SET)
     {       
-        keyboard_set_config_index(packet->index);
+        keyboard_set_profile_index(packet->index);
     }
     else if (data->code == PACKET_CODE_GET)
     {
-        packet->index = g_current_config_index;
+        packet->index = g_current_profile_index;
     }
 }
 
@@ -326,6 +341,62 @@ void packet_process_debug(PacketData*data)
                 packet->data[i].report_state = g_keyboard_advanced_keys[key_index].key.report_state;
             }
         }
+    }
+}
+
+void packet_process_macro(PacketData*data)
+{
+#ifdef MACRO_ENABLE
+    PacketMacro* packet = (PacketMacro*)data;
+    if (data->code == PACKET_CODE_SET)
+    {
+        for (uint8_t i = 0; i < packet->length; i++)
+        {
+            uint16_t index = packet->data[i].index;
+            if (index < MACRO_MAX_ACTIONS)
+            {
+                MacroAction *action = &g_macros[packet->macro_index].actions[index];
+                action->delay = packet->data[i].delay;
+                action->event.event = packet->data[i].event;
+                action->event.is_virtual = packet->data[i].is_virtual;
+                action->event.keycode = packet->data[i].keycode;
+                void * key = keyboard_get_key(packet->data[i].key_id);
+                if (key != NULL)
+                {
+                    action->event.key = key;
+                }
+            }
+        }
+    }
+    else if (data->code == PACKET_CODE_GET)
+    {
+        for (uint8_t i = 0; i < packet->length; i++)
+        {
+            uint8_t index = packet->data[i].index;
+            if (index < MACRO_MAX_ACTIONS)
+            {
+                MacroAction *action = &g_macros[packet->macro_index].actions[index];
+                packet->data[i].delay = action->delay;
+                packet->data[i].event = action->event.event;
+                packet->data[i].is_virtual = action->event.is_virtual;
+                packet->data[i].keycode = action->event.keycode;
+                if (action->event.key != NULL)
+                {
+                    packet->data[i].key_id = ((Key*)action->event.key)->id;
+                }
+            }
+        }
+    }
+#endif
+}
+
+void packet_process_feature(PacketData *data)
+{
+    PacketFeature *packet = (PacketFeature *)data;
+
+    if (data->code == PACKET_CODE_GET)
+    {
+        //todo
     }
 }
 

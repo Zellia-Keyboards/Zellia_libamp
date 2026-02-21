@@ -29,7 +29,7 @@ const Keycode g_default_keymap[LAYER_NUM][TOTAL_KEY_NUM] = {
         KEY_TRANSPARENT,        KEY_TRANSPARENT,KEY_TRANSPARENT,KEY_TRANSPARENT,KEY_TRANSPARENT,KEY_TRANSPARENT,KEY_HOME,       KEY_PAGE_DOWN,  KEY_END,
     },
     {
-        KEYBOARD_OPERATION | (KEYBOARD_BOOTLOADER << 8),  KEYBOARD_OPERATION | (KEYBOARD_CONFIG0 << 8), KEYBOARD_OPERATION | (KEYBOARD_CONFIG1 << 8), KEYBOARD_OPERATION | (KEYBOARD_CONFIG2 << 8),     KEYBOARD_OPERATION | (KEYBOARD_CONFIG3 << 8),       KEY_TRANSPARENT,                                    KEY_TRANSPARENT,               KEY_TRANSPARENT,KEY_TRANSPARENT,KEY_TRANSPARENT,KEY_TRANSPARENT,    KEY_TRANSPARENT,    KEY_TRANSPARENT,    KEYBOARD_OPERATION | (KEYBOARD_RESET_TO_DEFAULT << 8),
+        KEYBOARD_OPERATION | (KEYBOARD_BOOTLOADER << 8),  KEYBOARD_OPERATION | (KEYBOARD_PROFILE0 << 8), KEYBOARD_OPERATION | (KEYBOARD_PROFILE1 << 8), KEYBOARD_OPERATION | (KEYBOARD_PROFILE2 << 8),     KEYBOARD_OPERATION | (KEYBOARD_PROFILE3 << 8),       KEY_TRANSPARENT,                                    KEY_TRANSPARENT,               KEY_TRANSPARENT,KEY_TRANSPARENT,KEY_TRANSPARENT,KEY_TRANSPARENT,    KEY_TRANSPARENT,    KEY_TRANSPARENT,    KEYBOARD_OPERATION | (KEYBOARD_RESET_TO_DEFAULT << 8),
         KEY_TRANSPARENT,                                  KEY_TRANSPARENT,                              KEY_TRANSPARENT,                              KEY_TRANSPARENT,                                  KEYBOARD_OPERATION | (KEYBOARD_REBOOT << 8),        KEY_TRANSPARENT,                                    KEY_TRANSPARENT,               KEY_TRANSPARENT,KEY_TRANSPARENT,KEY_TRANSPARENT,KEY_TRANSPARENT,    KEY_TRANSPARENT,    KEY_TRANSPARENT,    KEY_TRANSPARENT,
         KEY_TRANSPARENT,                                  KEY_TRANSPARENT,                              KEYBOARD_OPERATION | (KEYBOARD_SAVE << 8),    KEY_TRANSPARENT,                                  KEYBOARD_OPERATION | (KEYBOARD_FACTORY_RESET << 8), KEY_TRANSPARENT,                                    KEY_TRANSPARENT,               KEY_TRANSPARENT,KEY_TRANSPARENT,KEY_TRANSPARENT,KEY_TRANSPARENT,    KEY_TRANSPARENT,    KEY_TRANSPARENT,
         KEY_TRANSPARENT,                                  KEY_TRANSPARENT,                              KEY_TRANSPARENT,                              KEY_TRANSPARENT,                                  KEY_TRANSPARENT,                                    KEY_TRANSPARENT,                                    KEY_TRANSPARENT,               KEY_TRANSPARENT,KEY_TRANSPARENT,KEY_TRANSPARENT,KEY_TRANSPARENT,    KEY_TRANSPARENT,    KEY_TRANSPARENT,        KEY_TRANSPARENT,
@@ -1171,4 +1171,27 @@ int hid_send_joystick(uint8_t*report,uint16_t len)
 void send_midi(uint8_t *report, uint16_t len)
 {
     memcpy(midi_send_buffer,report,len);
+}
+
+uint8_t flash_buffer[LFS_BLOCK_SIZE*LFS_BLOCK_COUNT];
+ 
+int flash_read(uint32_t addr, uint32_t size, uint8_t *data)
+{
+    memcpy(data, &flash_buffer[addr], size);
+    return 0;
+}
+
+int flash_write(uint32_t addr, uint32_t size, const uint8_t *data)
+{
+    for (uint32_t i = 0; i < size; i++) {
+        flash_buffer[addr + i] &= data[i];
+    }
+    //memcpy(flash_buffer + addr, data, size);
+    return 0;
+}
+
+int flash_erase(uint32_t addr, uint32_t size)
+{
+    memset(&flash_buffer[addr], 0xff, size);
+    return 0;
 }

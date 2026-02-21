@@ -7,9 +7,7 @@
 #define STORAGE_H_
 
 #include "keyboard.h"
-#ifdef DYNAMICKEY_ENABLE
 #include "dynamic_key.h"
-#endif
 
 #include "lfs.h"
 
@@ -17,8 +15,8 @@
 extern "C" {
 #endif
 
-#ifndef STORAGE_CONFIG_FILE_NUM
-#define STORAGE_CONFIG_FILE_NUM 4
+#ifndef STORAGE_PROFILE_FILE_NUM
+#define STORAGE_PROFILE_FILE_NUM 4
 #endif
 
 typedef struct __AdvancedKeyConfigurationNormalized
@@ -53,7 +51,7 @@ typedef struct __DynamicKeyStroke4x4Normalized
     uint8_t key_state;
 } DynamicKeyStroke4x4Normalized;
 
-extern uint8_t g_current_config_index;
+extern uint8_t g_current_profile_index;
 
 #ifdef LFS_ENABLE
 lfs_t * storage_get_lfs(void);
@@ -68,10 +66,13 @@ void dynamic_key_stroke_anti_normalize(DynamicKeyStroke4x4* dks, DynamicKeyStrok
 
 int storage_mount(void);
 void storage_unmount(void);
-uint8_t storage_read_config_index(void);
-void storage_save_config_index(void);
-void storage_read_config(void);
-void storage_save_config(void);
+int storage_check_version(void);
+uint8_t storage_read_profile_index(void);
+void storage_save_profile_index(void);
+void storage_read_profile(void);
+void storage_save_profile(void);
+void storage_save_script(void);
+void storage_read_script(void);
 
 #ifdef __cplusplus
 }
