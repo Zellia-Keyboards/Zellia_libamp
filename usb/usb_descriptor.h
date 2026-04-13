@@ -6,6 +6,8 @@
 
 #ifndef MAX_ENDPOINTS
 #define MAX_ENDPOINTS 8
+#endif
+
 #define USB_DESC_WORD(x) (uint8_t)((x) & 0xFF), (uint8_t)(((x) >> 8) & 0xFF)
 
 #define KEYBOARD_EPSIZE 8
