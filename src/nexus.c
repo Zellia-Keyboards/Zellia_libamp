@@ -126,7 +126,7 @@ void nexus_process_buffer(uint8_t slave_id, uint8_t *buf, uint16_t len)
     if (IS_ADVANCED_KEY(key))
     {
         ((AdvancedKey*)key)->raw = packet->raw;
-        ((AdvancedKey*)key)->value = packet->value * (1/65536.f) * ANALOG_VALUE_RANGE;
+        ((AdvancedKey*)key)->value = packet->value * ANALOG_VALUE_RANGE / NEXUS_VALUE_MAX;
     }
 #endif
 #endif
@@ -161,7 +161,7 @@ int nexus_send_report(void)
     Key* key = keyboard_get_key(counter);
     packet->raw = keyboard_get_key_raw_value(key);
 #if NEXUS_VALUE_MAX != 0
-    packet->value = (keyboard_get_key_analog_value(key)*(1/(float)ANALOG_VALUE_RANGE)*NEXUS_VALUE_MAX);
+    packet->value = (keyboard_get_key_analog_value(key)*NEXUS_VALUE_MAX/ANALOG_VALUE_RANGE);
 #endif
     memcpy(packet->bits, (void*)g_keyboard_bitmap, (TOTAL_KEY_NUM+7)/8);
     nexus_report(buffer, sizeof(PacketNexus));
