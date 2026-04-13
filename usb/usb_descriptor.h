@@ -4,6 +4,7 @@
 #include "keyboard.h"
 #include "joystick.h"
 
+#ifndef MAX_ENDPOINTS
 #define MAX_ENDPOINTS 8
 #define USB_DESC_WORD(x) (uint8_t)((x) & 0xFF), (uint8_t)(((x) >> 8) & 0xFF)
 

@@ -9,6 +9,8 @@
 #include "script.h"
 #include "storage.h"
 
+#include "file_system.h"
+
 #define LARGE_PKT_HDR_SIZE 9 // code(1)+type(1)+sub(1)+offset(4)+len(2)
 #define MAX_PAYLOAD_SIZE (64 - LARGE_PKT_HDR_SIZE)
 
@@ -22,10 +24,10 @@ enum
 
 uint32_t script_source_handle_large_data(uint8_t code, uint8_t sub_cmd, uint32_t val, uint8_t *data, uint16_t len)
 {
-    static const char *SCRIPT_FILENAME = "main.js";
-    static lfs_file_t script_file;
+#if defined(LFS_ENABLE) && defined(STORAGE_ENABLE)
+    static const char *SCRIPT_FILENAME = "scripts/main.js";
+    static File script_file;
     static bool script_file_open = false;
-    lfs_t *_lfs = storage_get_lfs();
     if (code == PACKET_CODE_LARGE_SET)
     {
         switch (sub_cmd)
@@ -33,11 +35,11 @@ uint32_t script_source_handle_large_data(uint8_t code, uint8_t sub_cmd, uint32_t
         case LARGE_DATA_CMD_START:
             if (script_file_open)
             {
-                lfs_file_close(_lfs, &script_file);
+                fs_close(&script_file);
             }
-
-            int err = lfs_file_open(_lfs, &script_file, SCRIPT_FILENAME, LFS_O_WRONLY | LFS_O_CREAT | LFS_O_TRUNC);
-            if (err < 0)
+            fs_unlink(SCRIPT_FILENAME);
+            int res = fs_open(&script_file, SCRIPT_FILENAME, FS_O_RDWR | FS_O_CREAT | FS_O_TRUNC);
+            if (res < 0)
             {
                 return false;
             }
@@ -49,11 +51,11 @@ uint32_t script_source_handle_large_data(uint8_t code, uint8_t sub_cmd, uint32_t
             {
                 return false;
             }
-            if (lfs_file_seek(_lfs, &script_file, val, LFS_SEEK_SET) < 0)
+            if (fs_seek(&script_file, val, FS_SEEK_SET) < 0)
             {
                 return false;
             }
-            if (lfs_file_write(_lfs, &script_file, data, len) < 0)
+            if (fs_write(&script_file, data, len) < 0)
             {
                 return false;
             }
@@ -63,11 +65,11 @@ uint32_t script_source_handle_large_data(uint8_t code, uint8_t sub_cmd, uint32_t
         case LARGE_DATA_CMD_ABORT:
             if (script_file_open)
             {
-                lfs_file_close(_lfs, &script_file);
+                fs_close(&script_file);
                 script_file_open = false;
             }
 #if SCRIPT_RUNTIME_STRATEGY == SCRIPT_JIT
-            script_init();
+            //script_init();
 #endif
             return 0;
         }
@@ -81,28 +83,28 @@ uint32_t script_source_handle_large_data(uint8_t code, uint8_t sub_cmd, uint32_t
             {
                 if (script_file_open)
                 {
-                    lfs_file_close(_lfs, &script_file);
+                    fs_close(&script_file);
                 }
 
-                int err = lfs_file_open(_lfs, &script_file, SCRIPT_FILENAME, LFS_O_RDONLY);
-                if (err < 0)
+                int res = fs_open(&script_file, SCRIPT_FILENAME, FS_O_RDONLY);
+                if (res < 0)
                 {
                     return 0;
                 }
                 script_file_open = true;
-                return lfs_file_size(_lfs, &script_file);
+                return  fs_size(&script_file);
             }
             else if (val == 1)
             {
                 if (!script_file_open)
                     return 0;
 
-                if (lfs_file_seek(_lfs, &script_file, val, LFS_SEEK_SET) < 0)
+                if (fs_seek(&script_file, val, FS_SEEK_SET) < 0)
                 {
                     return 0;
                 }
 
-                lfs_ssize_t read_len = lfs_file_read(_lfs, &script_file, data, len);
+                long read_len = fs_read(&script_file, data, len);
                 if (read_len < 0)
                 {
                     return 0;
@@ -117,12 +119,12 @@ uint32_t script_source_handle_large_data(uint8_t code, uint8_t sub_cmd, uint32_t
                 return 0;
             }
 
-            if (lfs_file_seek(_lfs, &script_file, val, LFS_SEEK_SET) < 0)
+            if (fs_seek(&script_file, val, FS_SEEK_SET) < 0)
             {
                 return 0;
             }
 
-            lfs_ssize_t read_len = lfs_file_read(_lfs, &script_file, data, len);
+            long read_len = fs_read(&script_file, data, len);
             if (read_len < 0)
             {
                 return 0;
@@ -132,23 +134,23 @@ uint32_t script_source_handle_large_data(uint8_t code, uint8_t sub_cmd, uint32_t
         case LARGE_DATA_CMD_ABORT:
             if (script_file_open)
             {
-                lfs_file_close(_lfs, &script_file);
+                fs_close(&script_file);
                 script_file_open = false;
             }
             return 0;
         }
     }
-
+#endif
     return 0;
 }
 
 uint32_t script_bytecode_handle_large_data(uint8_t code, uint8_t sub_cmd, uint32_t val, uint8_t *data, uint16_t len)
 {
+#if defined(LFS_ENABLE) && defined(STORAGE_ENABLE)
 #if SCRIPT_RUNTIME_STRATEGY == SCRIPT_AOT
-    static const char *SCRIPT_FILENAME = "main.bin";
-    static lfs_file_t script_file;
+    static const char *SCRIPT_FILENAME = "scripts/main.bin";
+    static File script_file;
     static bool script_file_open = false;
-    lfs_t *_lfs = storage_get_lfs();
     if (code == PACKET_CODE_LARGE_SET)
     {
         switch (sub_cmd)
@@ -156,11 +158,11 @@ uint32_t script_bytecode_handle_large_data(uint8_t code, uint8_t sub_cmd, uint32
         case LARGE_DATA_CMD_START:
             if (script_file_open)
             {
-                lfs_file_close(_lfs, &script_file);
+                fs_close(&script_file);
             }
-            lfs_remove(_lfs, SCRIPT_FILENAME);
-            int err = lfs_file_open(_lfs, &script_file, SCRIPT_FILENAME, LFS_O_WRONLY | LFS_O_CREAT | LFS_O_TRUNC);
-            if (err < 0)
+            fs_unlink(SCRIPT_FILENAME);
+            int res = fs_open(&script_file, SCRIPT_FILENAME, FS_O_WRONLY | FS_O_CREAT | FS_O_TRUNC);
+            if (res < 0)
             {
                 return false;
             }
@@ -172,11 +174,11 @@ uint32_t script_bytecode_handle_large_data(uint8_t code, uint8_t sub_cmd, uint32
             {
                 return false;
             }
-            if (lfs_file_seek(_lfs, &script_file, val, LFS_SEEK_SET) < 0)
+            if (fs_seek(&script_file, val, FS_SEEK_SET) < 0)
             {
                 return false;
             }
-            if (lfs_file_write(_lfs, &script_file, data, len) < 0)
+            if (fs_write(&script_file, data, len) < 0)
             {
                 return false;
             }
@@ -186,10 +188,10 @@ uint32_t script_bytecode_handle_large_data(uint8_t code, uint8_t sub_cmd, uint32
         case LARGE_DATA_CMD_ABORT:
             if (script_file_open)
             {
-                lfs_file_close(_lfs, &script_file);
+                fs_close(&script_file);
                 script_file_open = false;
             }
-            script_init();
+            //script_init();
             return 0;
         }
     }
@@ -202,28 +204,28 @@ uint32_t script_bytecode_handle_large_data(uint8_t code, uint8_t sub_cmd, uint32
             {
                 if (script_file_open)
                 {
-                    lfs_file_close(_lfs, &script_file);
+                    fs_close(&script_file);
                 }
 
-                int err = lfs_file_open(_lfs, &script_file, SCRIPT_FILENAME, LFS_O_RDONLY);
-                if (err < 0)
+                int res = fs_open(&script_file, SCRIPT_FILENAME, FS_O_RDONLY);
+                if (res < 0)
                 {
                     return 0;
                 }
                 script_file_open = true;
-                return lfs_file_size(_lfs, &script_file);
+                return fs_size(&script_file);
             }
             else if (val == 1)
             {
                 if (!script_file_open)
                     return 0;
 
-                if (lfs_file_seek(_lfs, &script_file, val, LFS_SEEK_SET) < 0)
+                if (fs_seek(&script_file, val, FS_SEEK_SET) < 0)
                 {
                     return 0;
                 }
 
-                lfs_ssize_t read_len = lfs_file_read(_lfs, &script_file, data, len);
+                long read_len = fs_read(&script_file, data, len);
                 if (read_len < 0)
                 {
                     return 0;
@@ -238,12 +240,12 @@ uint32_t script_bytecode_handle_large_data(uint8_t code, uint8_t sub_cmd, uint32
                 return 0;
             }
 
-            if (lfs_file_seek(_lfs, &script_file, val, LFS_SEEK_SET) < 0)
+            if (fs_seek(&script_file, val, FS_SEEK_SET) < 0)
             {
                 return 0;
             }
 
-            lfs_ssize_t read_len = lfs_file_read(_lfs, &script_file, data, len);
+            long read_len = fs_read(&script_file, data, len);
             if (read_len < 0)
             {
                 return 0;
@@ -253,12 +255,13 @@ uint32_t script_bytecode_handle_large_data(uint8_t code, uint8_t sub_cmd, uint32
         case LARGE_DATA_CMD_ABORT:
             if (script_file_open)
             {
-                lfs_file_close(_lfs, &script_file);
+                fs_close(&script_file);
                 script_file_open = false;
             }
             return 0;
         }
     }
+#endif
 #endif
     return 0;
 }

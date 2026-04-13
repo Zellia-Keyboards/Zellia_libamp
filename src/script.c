@@ -11,6 +11,7 @@
 #include "mquickjs.h"
 #include "mqjs_utils.c"
 
+#include "file_system.h"
 #include "storage.h"
 
 #include "mqjs_stdlib.h"
@@ -42,6 +43,8 @@ static bool on_key_down_func_set = false;
 static JSGCRef on_key_up_func_ref; 
 static JSValue *on_key_up_func_ptr = NULL;
 static bool on_key_up_func_set = false;
+
+volatile bool g_keyboard_enable_script;
 
 static void dump_error(JSContext *ctx)
 {
@@ -113,8 +116,8 @@ static void script_setup_hooks(JSContext *ctx)
 
 void script_factory_reset(void)
 {
-    lfs_remove(storage_get_lfs(), "main.js");
-    lfs_remove(storage_get_lfs(), "main.bin");
+    fs_unlink("scripts/main.js");
+    fs_unlink("scripts/main.bin");
 }
 
 void script_reset_runtime(void)
@@ -147,14 +150,20 @@ void script_init(void)
 {
     storage_read_script();
     //memset(g_script_bytecode_buffer, 0, sizeof(g_script_bytecode_buffer));
-    struct lfs_info info;
-    int err = lfs_stat(storage_get_lfs(), "main.bin", &info);
 #if SCRIPT_RUNTIME_STRATEGY == SCRIPT_AOT
-    script_update_bytecode(g_script_bytecode_buffer, info.size);
+    File file;
+    int res = fs_open(&file, "scripts/main.bin", FS_O_RDWR | FS_O_CREAT);
+    if (res < 0)
+    {        
+        return;
+    }
+    script_update_bytecode(g_script_bytecode_buffer, fs_size(&file));
+    fs_close(&file);
 #endif
 #if SCRIPT_RUNTIME_STRATEGY == SCRIPT_JIT
     script_update_source((char *)g_script_source_buffer, strlen(g_script_source_buffer));
 #endif
+    JS_SetRandomSeed(js_ctx, g_keyboard_tick);
 }
 
 void script_eval(const char *code_buf, size_t len, const char *filename)
@@ -273,6 +282,10 @@ void script_watch(uint16_t id)
 
 void script_process(void)
 {
+    if (!g_keyboard_enable_script)
+    {
+        return;
+    }
     if (loop_func_set)
     {
         if (JS_StackCheck(js_ctx, 2))
@@ -290,8 +303,74 @@ void script_process(void)
     run_timers(js_ctx);
 }
 
-void script_event_handler(KeyboardEvent event)
+static void dispatch_js_key_event(JSContext *ctx, JSValue *func_ptr, KeyboardEvent event)
 {
+    JSGCRef func_ref;
+    JSValue *pfunc = JS_PushGCRef(ctx, &func_ref);
+    *pfunc = *func_ptr;
+    
+    if (JS_StackCheck(ctx, 3))
+    {
+        JS_PopGCRef(ctx, &func_ref);
+        return;
+    }
+    
+    JS_PushArg(ctx, new_key_instance(ctx, event.key));
+    JS_PushArg(ctx, *pfunc);     /* func name */
+    JS_PushArg(ctx, JS_NULL);    /* this */
+    
+    JSValue ret = JS_Call(ctx, 1);
+    JS_PopGCRef(ctx, &func_ref);
+    
+    if (JS_IsException(ret)) {
+        dump_error(ctx);
+    }
+}
+
+static void script_event_handler_(KeyboardEvent event)
+{
+    if (event.event == KEYBOARD_EVENT_KEY_DOWN && KEYCODE_GET_MAIN(event.keycode) == SCRIPT_COLLECTION)
+    {
+        switch (KEYCODE_GET_SUB(event.keycode))
+        {
+        case SCRIPT_START:
+            if (g_keyboard_enable_script)
+            {
+                break;
+            }
+            g_keyboard_enable_script = true;
+            script_init();
+            break;
+        case SCRIPT_STOP:
+            g_keyboard_enable_script = false;
+            script_reset_runtime();
+            break;
+        case SCRIPT_SUSPEND:
+            g_keyboard_enable_script = false;
+            break;
+        case SCRIPT_RESTART:
+            g_keyboard_enable_script = true;
+            script_init();
+            break;
+        case SCRIPT_TOGGLE:
+            g_keyboard_enable_script = !g_keyboard_enable_script;
+            if (g_keyboard_enable_script)
+            {
+                script_init();
+            }
+            else
+            {
+                script_reset_runtime();
+            }
+            break;
+        default:
+            break;
+        }
+    }
+    if (!g_keyboard_enable_script)
+    {
+        return;
+    }
     JSGCRef func_ref;
     JSValue *pfunc;
     const uint16_t id = ((Key*)event.key)->id;
@@ -302,60 +381,23 @@ void script_event_handler(KeyboardEvent event)
     switch (event.event)
     {
     case KEYBOARD_EVENT_KEY_DOWN:
-        //if (!event.is_virtual)
-        //{
-        //    keyboard_key_event_down_callback((Key*)event.key);
-        //}
-    case KEYBOARD_EVENT_KEY_UP:
-        if (event.event == KEYBOARD_EVENT_KEY_UP)
+        if (on_key_down_func_set)
         {
-            if (on_key_up_func_set)
-            {
-                pfunc = JS_PushGCRef(js_ctx, &func_ref);
-                *pfunc = *on_key_up_func_ptr;
-                if (JS_StackCheck(js_ctx, 3))
-                {
-                    JS_PopGCRef(js_ctx, &func_ref);
-                    return;
-                }
-                JS_PushArg(js_ctx, new_key_instance(js_ctx, event.key));
-                JS_PushArg(js_ctx, *pfunc); /* func name */
-                JS_PushArg(js_ctx, JS_NULL); /* this */
-                JSValue ret = JS_Call(js_ctx, 1);
-                JS_PopGCRef(js_ctx, &func_ref);
-                if (JS_IsException(ret)) {
-                    dump_error(js_ctx);
-                }
-            }
-            else
-            {
-                printf("no on_key_up function\n");
-            }
+            dispatch_js_key_event(js_ctx, on_key_down_func_ptr, event);
         }
         else
         {
-            if (on_key_down_func_set)
-            {
-                pfunc = JS_PushGCRef(js_ctx, &func_ref);
-                *pfunc = *on_key_down_func_ptr;
-                if (JS_StackCheck(js_ctx, 3))
-                {
-                    JS_PopGCRef(js_ctx, &func_ref);
-                    return;
-                }
-                JS_PushArg(js_ctx, new_key_instance(js_ctx, event.key));
-                JS_PushArg(js_ctx, *pfunc); /* func name */
-                JS_PushArg(js_ctx, JS_NULL); /* this */
-                JSValue ret = JS_Call(js_ctx, 1);
-                JS_PopGCRef(js_ctx, &func_ref);
-                if (JS_IsException(ret)) {
-                    dump_error(js_ctx);
-                }
-            }
-            else
-            {
-                printf("no on_key_down function\n");
-            }
+            printf("no on_key_down function\n");
+        }
+        break;
+    case KEYBOARD_EVENT_KEY_UP:
+        if (on_key_up_func_set)
+        {
+            dispatch_js_key_event(js_ctx, on_key_up_func_ptr, event);
+        }
+        else
+        {
+            printf("no on_key_up function\n");
         }
         break;
     case KEYBOARD_EVENT_KEY_TRUE:
@@ -365,6 +407,21 @@ void script_event_handler(KeyboardEvent event)
     default:
         break;
     }
+}
+
+void script_event_handler(KeyboardEvent event)
+{
+#ifndef SCRIPT_POLLING
+    script_event_handler_(event);
+#endif
+}
+
+void script_event_poller(KeyboardEvent event, uint32_t tick)
+{
+    UNUSED(tick);
+#ifdef SCRIPT_POLLING
+    script_event_handler_(event);
+#endif
 }
 
 void script_deinit(void)

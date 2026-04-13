@@ -38,7 +38,7 @@ static inline void nexus_config_slave(uint8_t slave_id)
         packet->code = PACKET_CODE_SET;
         packet->type = PACKET_DATA_ADVANCED_KEY;
         packet->index = i;
-        advanced_key_config_normalize(&packet->data, &key->config);
+        memcpy(&packet->data, &key->config, sizeof(AdvancedKeyConfiguration));
         nexus_send_timeout(slave_id,buffer,64,NEXUS_TIMEOUT);
         /*
         PacketKeymap *packet_keymap = (PacketKeymap *)buffer;

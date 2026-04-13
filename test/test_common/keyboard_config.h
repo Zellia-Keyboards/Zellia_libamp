@@ -3,8 +3,8 @@
  *
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
-#ifndef KEYBOARD_CONF_H_
-#define KEYBOARD_CONF_H_
+#ifndef KEYBOARD_CONFIG_H_
+#define KEYBOARD_CONFIG_H_
 
 /********************/
 /* Keyboard General */
@@ -12,9 +12,7 @@
 #define LAYER_NUM               5
 #define ADVANCED_KEY_NUM        64
 #define KEY_NUM                 0
-//#define FIXED_POINT_EXPERIMENTAL
-#define OPTIMIZE_FOR_FLOAT_DIVISION
-//#define CONTINOUS_DEBUG
+//#define CONTINUOUS_DEBUG
 #define DEBUG_INTERVAL 1
 #define DYNAMICKEY_ENABLE
 #define MACRO_ENABLE
@@ -25,6 +23,7 @@
 #define DEBOUNCE_PRESS_EAGER    1
 #define DEBOUNCE_RELEASE        10
 #define DEBOUNCE_RELEASE_EAGER  0
+#define LUT_LENGTH              8192
 
 /********************/
 /* Keyboard Default */
@@ -70,7 +69,7 @@
 #define BUBBLE_DISTANCE         2.5f
 #define PORT_LOCATION           {1, -0.5}
 #define RGB_FLASH_MAX_DURATION  1000
-#define RGB_FLASH_RIPPLE_SPEED  0.03
+//#define RGB_FLASH_RIPPLE_SPEED  30
 #define RGB_DEFAULT_MODE        RGB_MODE_LINEAR
 #define RGB_DEFAULT_SPEED       0.03
 #define RGB_DEFAULT_COLOR_HSV   {273, 78, 99}
@@ -78,7 +77,6 @@
 #define RGB_TOP                 -0.5f
 #define RGB_RIGHT               14.5f
 #define RGB_BOTTOM              4.5f
-#define RGB_USE_LIST_EXPERIMENTAL
 #define RGB_GAMMA_ENABLE
 #define RGB_GAMMA               2.2f
 #define RGB_CUSTOM_INVERSE_MAPPING
@@ -165,4 +163,4 @@
 #define SCRIPT_ENABLE
 //#define SCRIPT_MINIMAL
 
-#endif /* KEYBOARD_CONF_H_ */
+#endif /* KEYBOARD_CONFIG_H_ */

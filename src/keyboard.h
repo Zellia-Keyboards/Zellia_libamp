@@ -8,8 +8,9 @@
 
 #include "key.h"
 #include "advanced_key.h"
-#include "keyboard_conf.h"
+#include "keyboard_config.h"
 #include "keyboard_def.h"
+#include "keyboard_util.h"
 #include "event.h"
 #include "keycode.h"
 
@@ -39,6 +40,10 @@ extern "C" {
 
 #ifndef POLLING_RATE
 #define POLLING_RATE 1000
+#endif
+
+#ifndef CALIBRATION_DELAY
+#define CALIBRATION_DELAY 1000
 #endif
 
 #define NKRO_REPORT_BITS 30
@@ -81,7 +86,7 @@ enum
     KEYBOARD_CONFIG_DEBUG           = 0,
     KEYBOARD_CONFIG_NKRO            = 1,
     KEYBOARD_CONFIG_WINLOCK         = 2,
-    KEYBOARD_CONFIG_CONTINOUS_POLL  = 3,
+    KEYBOARD_CONFIG_CONTINUOUS_POLL  = 3,
     KEYBOARD_CONFIG_ENABLE_REPORT   = 4,
     KEYBOARD_CONFIG_NUM             = 5,
 };
@@ -101,7 +106,7 @@ typedef union
         bool debug : 1;
         bool nkro : 1;
         bool winlock : 1;
-        bool continous_poll : 1;
+        bool continuous_poll : 1;
         bool enable_report : 1;
         uint8_t reserved : 3;
     };
@@ -131,7 +136,8 @@ typedef union
         bool    consumer : 1;
         bool    system : 1;
         bool    joystick : 1;
-        uint8_t reserved : 3;
+        bool    gamepad : 1;
+        uint8_t reserved : 2;
     };
 } KeyboardReportFlag;
 
@@ -179,8 +185,15 @@ extern volatile KeyboardReportFlag g_keyboard_report_flags;
 extern volatile uint32_t g_keyboard_bitmap[KEY_BITMAP_SIZE];
 
 void keyboard_event_handler(KeyboardEvent event);
+void keyboard_event_poller(KeyboardEvent event, uint32_t tick);
 void keyboard_operation_event_handler(KeyboardEvent event);
+void keyboard_operation_event_poller(KeyboardEvent event, uint32_t tick);
+void keyboard_user_event_handler(KeyboardEvent event);
+void keyboard_user_event_poller(KeyboardEvent event, uint32_t tick);
 void keyboard_key_event_down_callback(Key*key);
+void keyboard_key_event_up_callback(Key*key);
+void keyboard_key_event_down_callback_user(Key*key);
+void keyboard_key_event_up_callback_user(Key*key);
 
 void keyboard_add_buffer(KeyboardEvent event);
 int keyboard_buffer_send(void);
@@ -203,7 +216,6 @@ void keyboard_reboot(void);
 void keyboard_reset_to_default(void);
 void keyboard_factory_reset(void);
 void keyboard_jump_to_bootloader(void);
-void keyboard_user_event_handler(KeyboardEvent event);
 void keyboard_scan(void);
 void keyboard_fill_buffer(void);
 void keyboard_send_report(void);
@@ -211,6 +223,7 @@ void keyboard_recovery(void);
 void keyboard_save(void);
 void keyboard_set_profile_index(uint8_t index);
 void keyboard_task(void);
+void keyboard_process(void);
 void keyboard_delay(uint32_t ms);
 
 static inline Key* keyboard_get_key(uint16_t id)

@@ -13,42 +13,33 @@ extern "C" {
 #endif
 
 #ifndef EVENT_BUFFER_LENGTH
-#define EVENT_BUFFER_LENGTH 16
+#define EVENT_BUFFER_LENGTH 32
 #endif
 
-typedef struct __EventBuffer
+#define event_loop_queue_foreach(q, type, item) for (uint16_t __index = (q)->front; __index != (q)->rear; __index = (__index + 1) % (q)->len)\
+                                              for (type *item = &((q)->data[__index]); item; item = NULL)
+
+typedef struct __EventArgument
 {
     KeyboardEvent event;
-    void* owner;
-} EventBuffer;
+    uint32_t tick;
+}EventArgument;
 
-typedef struct __EventBufferListNode
+typedef EventArgument EventLoopQueueElm;
+
+typedef struct __EventLoopQueue
 {
-    EventBuffer data;
-    int16_t next;
-} EventBufferListNode;
-typedef struct __EventBufferList
-{
-    EventBufferListNode *data;
-    int16_t head;
-    int16_t tail;
+    EventLoopQueueElm *data;
+    int16_t front;
+    int16_t rear;
     int16_t len;
-    int16_t free_node;
-} EventBufferList;
+} EventLoopQueue;
 
-extern EventBufferList g_event_buffer_list;
+typedef EventLoopQueue EventBuffer;
 
-void event_buffer_init(void);
-void event_buffer_add_buffer(void);
-
-void event_forward_list_init(EventBufferList* list, EventBufferListNode* data, uint16_t len);
-void event_forward_list_erase_after(EventBufferList* list, EventBufferListNode* data);
-void event_forward_list_insert_after(EventBufferList* list, EventBufferListNode* data, EventBuffer t);
-void event_forward_list_push_front(EventBufferList* list, EventBuffer t);
-void event_forward_list_remove_first(EventBufferList* list, EventBuffer t);
-void event_forward_list_remove_specific_owner(EventBufferList* list, void* owner);
-bool event_forward_list_exists_keycode(EventBufferList* list, void* owner, Keycode keycode);
-void event_forward_list_remove_first_keycode(EventBufferList* list, void* owner, Keycode keycode);
+void event_loop_queue_init(EventLoopQueue* q, EventLoopQueueElm*data, uint16_t len);
+EventLoopQueueElm event_loop_queue_pop(EventLoopQueue* q);
+void event_loop_queue_push(EventLoopQueue* q, EventLoopQueueElm t);
 
 #ifdef __cplusplus
 }

@@ -10,12 +10,13 @@
 #include "stddef.h"
 #include "stdbool.h"
 
-#include "keyboard_conf.h"
+#include "keyboard_config.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
+#ifdef KEY_CALLBACK_ENABLE
 typedef enum
 {
     KEY_EVENT_DOWN,
@@ -23,12 +24,8 @@ typedef enum
     KEY_EVENT_NUM
 } KEY_EVENT;
 typedef void (*key_cb_t)(void *);
-typedef struct __KeyBase
-{
-    uint16_t id;
-    uint8_t state;
-    uint8_t report_state;
-} KeyBase;
+#endif
+
 typedef struct __Key
 {
     uint16_t id;
@@ -37,10 +34,54 @@ typedef struct __Key
 #if DEBOUNCE_PRESS > 0 || DEBOUNCE_RELEASE > 0
     int8_t debounce;
 #endif
+#ifdef KEY_CALLBACK_ENABLE
     key_cb_t key_cb[KEY_EVENT_NUM];
+#endif
 } Key;
-bool key_update(Key *key, bool state);
-void key_attach(Key *key, KEY_EVENT e, key_cb_t cb);
+
+static inline bool key_update(Key* key,bool state);
+
+#ifdef KEY_CALLBACK_ENABLE
+static inline void key_attach(Key* key, KEY_EVENT e, key_cb_t cb);
+static inline void key_emit(Key* key, KEY_EVENT e);
+#endif
+
+static inline bool key_update(Key* key,bool state)
+{
+#ifdef KEY_CALLBACK_ENABLE
+    if ((!(key->state)) && state)
+    {
+        key_emit(key, KEY_EVENT_DOWN);
+        key->state = state;
+        return true;
+    }
+    if ((key->state) && (!state))
+    {
+        key_emit(key, KEY_EVENT_UP);
+        key->state = state;
+        return true;
+    }
+    key->state = state;
+    return false;
+#else
+    const bool changed = (key->state != state);
+    key->state = state;
+    return changed;
+#endif
+}
+
+#ifdef KEY_CALLBACK_ENABLE
+static inline void key_attach(Key* key, KEY_EVENT e, key_cb_t cb)
+{
+    key->key_cb[e] = cb;
+}
+
+static inline void key_emit(Key* key, KEY_EVENT e)
+{
+    if (key->key_cb[e])
+        key->key_cb[e](key);
+}
+#endif
 
 #ifdef __cplusplus
 }

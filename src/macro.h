@@ -12,16 +12,12 @@
 extern "C" {
 #endif
 
-#ifndef MACRO_NUMS
-#define MACRO_NUMS 4
+#ifndef MACRO_NUM
+#define MACRO_NUM 4
 #endif
 
 #ifndef MACRO_MAX_ACTIONS
 #define MACRO_MAX_ACTIONS 128
-#endif
-
-#ifndef MACRO_BUFFER_LENGTH
-#define MACRO_BUFFER_LENGTH 8
 #endif
 
 #define MACRO_KEYCODE_GET_INDEX(keycode) (KEYCODE_GET_SUB((keycode)) & 0x0F)
@@ -65,7 +61,7 @@ typedef struct __Macro
     MacroAction* actions;
 } Macro;
 
-extern Macro g_macros[MACRO_NUMS];
+extern Macro g_macros[MACRO_NUM];
 
 void macro_init(void);
 

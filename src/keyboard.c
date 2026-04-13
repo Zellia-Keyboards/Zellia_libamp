@@ -48,6 +48,10 @@
 #ifdef SCRIPT_ENABLE
 #include "script.h"
 #endif
+#ifdef GAMEPAD_ENABLE
+#include "gamepad.h"
+#endif
+#include "event_cache.h"
 #include "event_buffer.h"
 
 __WEAK AdvancedKey g_keyboard_advanced_keys[ADVANCED_KEY_NUM];
@@ -69,16 +73,16 @@ static Keyboard_6KROBuffer keyboard_6kro_buffer;
 
 volatile uint32_t g_keyboard_bitmap[KEY_BITMAP_SIZE];
 
+static uint32_t target_calibration_tick;
+
+static EventLoopQueue event_buffer;
+static EventLoopQueueElm event_buffers[EVENT_BUFFER_LENGTH];
 
 void keyboard_keycode_event_handler(KeyboardEvent event)
 {
     switch (event.event)
     {
     case KEYBOARD_EVENT_KEY_DOWN:
-        if (!event.is_virtual)
-        {    
-            keyboard_key_event_down_callback((Key*)event.key);
-        }
         g_keyboard_report_flags.keyboard = true;
         break;
     case KEYBOARD_EVENT_KEY_TRUE:
@@ -95,6 +99,10 @@ void keyboard_keycode_event_handler(KeyboardEvent event)
 
 void keyboard_event_handler(KeyboardEvent event)
 {
+    if (EVENT_CHANGED(event.event))
+    {
+        event_loop_queue_push(&event_buffer, (EventLoopQueueElm){event, g_keyboard_tick});
+    }
 #ifdef SCRIPT_ENABLE
     script_event_handler(event);
 #endif
@@ -104,6 +112,17 @@ void keyboard_event_handler(KeyboardEvent event)
     if (!event.is_virtual)
     {
         layer_lock_handler(event);
+    }
+    if (!event.is_virtual)
+    {
+        if (event.event == KEYBOARD_EVENT_KEY_DOWN)
+        {
+            keyboard_key_event_down_callback((Key*)event.key);
+        }
+        else if (event.event == KEYBOARD_EVENT_KEY_UP)
+        {
+            keyboard_key_event_up_callback((Key*)event.key);
+        }
     }
     switch (KEYCODE_GET_MAIN(event.keycode))
     {
@@ -134,9 +153,9 @@ void keyboard_event_handler(KeyboardEvent event)
         macro_event_handler(event);
         break;
 #endif
-#ifdef SCRIPT_ENABLE
-    case SCRIPT_COLLECTION:
-        script_event_handler(event);
+#ifdef GAMEPAD_ENABLE
+    case GAMEPAD_COLLECTION:
+        gamepad_event_handler(event);
         break;
 #endif
     case LAYER_CONTROL:
@@ -150,6 +169,32 @@ void keyboard_event_handler(KeyboardEvent event)
         break;
     default:
         keyboard_keycode_event_handler(event);
+        break;
+    }
+}
+
+void keyboard_event_poller(KeyboardEvent event, uint32_t tick)
+{
+#ifdef SCRIPT_ENABLE
+    script_event_poller(event, tick);
+#endif
+    if (!event.is_virtual && event.event == KEYBOARD_EVENT_KEY_DOWN)
+    {    
+        Key * key = (Key*)event.key;
+#ifdef RGB_ENABLE
+        rgb_activate(key->id, g_keyboard_tick);
+#endif
+        // keyboard_key_event_down_callback((Key*)event.key);
+    }
+    switch (KEYCODE_GET_MAIN(event.keycode))
+    {
+    case KEYBOARD_OPERATION:
+        keyboard_operation_event_poller(event, tick);
+        break;
+    case KEY_USER:
+        keyboard_user_event_poller(event, tick);
+        break;
+    default:
         break;
     }
 }
@@ -189,6 +234,11 @@ void keyboard_add_buffer(KeyboardEvent event)
         joystick_add_buffer(event);
         break;
 #endif
+#ifdef GAMEPAD_ENABLE
+    case GAMEPAD_COLLECTION:
+        gamepad_add_buffer(event);
+        break;
+#endif
     case LAYER_CONTROL:
         break;
     case KEYBOARD_OPERATION:
@@ -200,18 +250,18 @@ void keyboard_add_buffer(KeyboardEvent event)
     }
 }
 
-void keyboard_operation_event_handler(KeyboardEvent event)
+static void keyboard_operation_event_handler_(KeyboardEvent event)
 {
+    uint8_t modifier = KEYCODE_GET_SUB(event.keycode);
     switch (event.event)
     {
     case KEYBOARD_EVENT_KEY_UP:
+        if (modifier == KEYBOARD_CALIBRATE)
+        {
+            target_calibration_tick = g_keyboard_tick + KEYBOARD_TIME_TO_TICK(CALIBRATION_DELAY);
+        }
         break;
     case KEYBOARD_EVENT_KEY_DOWN:
-        if (!event.is_virtual)
-        {
-            keyboard_key_event_down_callback((Key*)event.key);
-        }
-        uint8_t modifier = KEYCODE_GET_SUB(event.keycode);
         if ((modifier & 0x3F) < KEYBOARD_CONFIG_BASE)
         {
             switch (modifier & 0x3F)
@@ -221,6 +271,7 @@ void keyboard_operation_event_handler(KeyboardEvent event)
                 break;
             case KEYBOARD_FACTORY_RESET:
                 keyboard_factory_reset();
+                packet_send_version_packet();
                 break;
             case KEYBOARD_SAVE:
                 keyboard_save();
@@ -230,6 +281,10 @@ void keyboard_operation_event_handler(KeyboardEvent event)
                 break;
             case KEYBOARD_RESET_TO_DEFAULT:
                 keyboard_reset_to_default();
+                packet_send_version_packet();
+                break;
+            case KEYBOARD_RECOVERY:
+                keyboard_recovery();
                 break;
 #ifdef RGB_ENABLE
             case KEYBOARD_RGB_BRIGHTNESS_UP:
@@ -258,6 +313,7 @@ void keyboard_operation_event_handler(KeyboardEvent event)
             case KEYBOARD_PROFILE2:
             case KEYBOARD_PROFILE3:
                 keyboard_set_profile_index((event.keycode >> 8) & 0x0F);
+                packet_send_version_packet();
                 break;
             default:
                 break;
@@ -290,20 +346,45 @@ void keyboard_operation_event_handler(KeyboardEvent event)
     }
 }
 
+void keyboard_operation_event_handler(KeyboardEvent event)
+{
+#ifndef KEYBOARD_OPERATION_POLLING
+    keyboard_operation_event_handler_(event);
+#endif
+}
+
+void keyboard_operation_event_poller(KeyboardEvent event, uint32_t tick)
+{
+    UNUSED(tick);
+#ifdef KEYBOARD_OPERATION_POLLING
+    keyboard_operation_event_handler_(event);
+#endif
+}
+
 void keyboard_key_event_down_callback(Key*key)
 {
-    if (IS_ADVANCED_KEY(key))
-    {
-#ifdef RGB_ENABLE
-        rgb_activate(key->id);
-#endif
+    keyboard_key_event_down_callback_user(key);
 #ifdef KPS_ENABLE
-        record_kps_tick();
+    record_kps_tick();
 #endif
 #ifdef COUNTER_ENABLE
-        g_key_counts[key->id]++;
+    g_key_counts[key->id]++;
 #endif
-    }
+}
+
+void keyboard_key_event_up_callback(Key*key)
+{
+    keyboard_key_event_up_callback_user(key);
+}
+
+__WEAK void keyboard_key_event_down_callback_user(Key*key)
+{
+
+}
+
+__WEAK void keyboard_key_event_up_callback_user(Key*key)
+{
+
 }
 
 int keyboard_buffer_send(void)
@@ -343,6 +424,9 @@ void keyboard_clear_buffer(void)
 #endif
 #ifdef JOYSTICK_ENABLE
     joystick_buffer_clear();
+#endif
+#ifdef GAMEPAD_ENABLE
+    gamepad_buffer_clear();
 #endif
 }
 
@@ -415,14 +499,14 @@ void keyboard_init(void)
     {
         keyboard_factory_reset();
     }
-    storage_read_profile_index();
 #endif
 #ifdef RGB_ENABLE
     rgb_init();
 #endif
 #if defined(MACRO_ENABLE) || defined(SCRIPT_ENABLE)
-    event_buffer_init();
+    event_cache_init();
 #endif
+    event_loop_queue_init(&event_buffer, event_buffers, EVENT_BUFFER_LENGTH);
 #ifdef MACRO_ENABLE
     macro_init();
 #endif
@@ -435,7 +519,7 @@ void keyboard_init(void)
 #endif
 #endif
 #ifdef SCRIPT_ENABLE
-    script_init();
+    //script_init();
 #endif
 }
 
@@ -493,6 +577,11 @@ __WEAK void keyboard_user_event_handler(KeyboardEvent event)
     UNUSED(event);
 }
 
+__WEAK void keyboard_user_event_poller(KeyboardEvent event, uint32_t tick)
+{
+    UNUSED(event);
+    UNUSED(tick);
+}
 
 __WEAK void keyboard_scan(void)
 {
@@ -501,6 +590,7 @@ __WEAK void keyboard_scan(void)
 
 void keyboard_recovery(void)
 {
+    storage_read_profile_index();
 #ifdef STORAGE_ENABLE
     storage_read_profile();
 #else
@@ -582,7 +672,7 @@ void keyboard_fill_buffer(void)
     dynamic_key_add_buffer();
 #endif
 #if defined(MACRO_ENABLE) || defined(SCRIPT_ENABLE)
-    event_buffer_add_buffer();
+    event_cache_add_buffer();
 #endif
 }
 
@@ -629,6 +719,15 @@ void keyboard_send_report(void)
         }
     }
 #endif
+#ifdef GAMEPAD_ENABLE
+    if (g_keyboard_report_flags.gamepad)
+    {
+        if (!gamepad_buffer_send())
+        {
+            g_keyboard_report_flags.gamepad = false;
+        }
+    }
+#endif
 }
 
 __WEAK void keyboard_task(void)
@@ -658,7 +757,7 @@ __WEAK void keyboard_task(void)
         keyboard_advanced_key_update_raw(advanced_key, advanced_key_read_raw(advanced_key));
     }
 #endif
-#ifdef SCRIPT_ENABLE
+#if defined(SCRIPT_ENABLE) && !defined(SCRIPT_POLLING)
     script_process();
 #endif
 #ifdef MACRO_ENABLE
@@ -681,7 +780,7 @@ __WEAK void keyboard_task(void)
         }
     }
 #endif
-    if (g_keyboard_config.continous_poll)
+    if (g_keyboard_config.continuous_poll)
     {
         g_keyboard_report_flags.keyboard = true;
     }
@@ -691,6 +790,31 @@ __WEAK void keyboard_task(void)
         keyboard_fill_buffer();
         keyboard_send_report();
     }
+    if (g_keyboard_config.debug)
+    {   
+        packet_send_debug_packet();
+    }
+#endif
+}
+
+void keyboard_process(void)
+{
+    event_loop_queue_foreach(&event_buffer, EventLoopQueueElm, event)
+    {
+        keyboard_event_poller(event->event, event->tick);
+        event_loop_queue_pop(&event_buffer);
+    }
+#if defined(SCRIPT_ENABLE) && defined(SCRIPT_POLLING)
+    script_process();
+#endif
+    if (target_calibration_tick && g_keyboard_tick >= target_calibration_tick)
+    {
+        target_calibration_tick = 0;
+        analog_calibrate();
+        packet_send_version_packet();
+    }
+#ifdef RGB_ENABLE
+    rgb_process();
 #endif
 }
 

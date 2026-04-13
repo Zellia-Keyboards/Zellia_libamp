@@ -73,6 +73,7 @@ file(GLOB COMPONENT_SRCS
     ${PROJECT_SOURCE_DIR}/usb/*.c
     ${PROJECT_SOURCE_DIR}/lib/littlefs/*.c
     ${PROJECT_SOURCE_DIR}/src/lamp_array/*.c
+    ${PROJECT_SOURCE_DIR}/src/log/*.c
 )
 
 file(GLOB MQJS_SRCS
@@ -97,6 +98,7 @@ target_include_directories( ${PROJECT_NAME} PUBLIC
     ${PROJECT_SOURCE_DIR}/src
     ${PROJECT_SOURCE_DIR}/usb
     ${PROJECT_SOURCE_DIR}/src/lamp_array
+    ${PROJECT_SOURCE_DIR}/src/log
     ${PROJECT_SOURCE_DIR}/lib/littlefs
     ${PROJECT_SOURCE_DIR}/lib/lufa
     ${PROJECT_SOURCE_DIR}/lib/mquickjs

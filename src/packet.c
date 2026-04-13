@@ -12,46 +12,8 @@
 #ifdef MACRO_ENABLE
 #include "macro.h"
 #endif
-
-static inline void command_advanced_key_config_normalize(AdvancedKeyConfigurationNormalized* buffer, AdvancedKeyConfiguration* config)
-{
-    buffer->mode = config->mode;
-#if defined(NEXUS_ENABLE) && NEXUS_IS_SLAVE
-    buffer->calibration_mode = config->calibration_mode;
-#endif
-    buffer->activation_value = A_NORM(config->activation_value);
-    buffer->deactivation_value = A_NORM(config->deactivation_value);
-    buffer->trigger_distance = A_NORM(config->trigger_distance);
-    buffer->release_distance = A_NORM(config->release_distance);
-    buffer->trigger_speed = A_NORM(config->trigger_speed);
-    buffer->release_speed = A_NORM(config->release_speed);
-    buffer->upper_deadzone = A_NORM(config->upper_deadzone);
-    buffer->lower_deadzone = A_NORM(config->lower_deadzone);
-#if defined(NEXUS_ENABLE) && NEXUS_IS_SLAVE
-    buffer->upper_bound = config->upper_bound;
-    buffer->lower_bound = config->lower_bound;
-#endif
-}
-
-static inline void command_advanced_key_config_anti_normalize(AdvancedKeyConfiguration* config, AdvancedKeyConfigurationNormalized* buffer)
-{
-    config->mode = buffer->mode;
-#if defined(NEXUS_ENABLE) && NEXUS_IS_SLAVE
-    config->calibration_mode = buffer->calibration_mode;
-#endif
-    config->activation_value = A_ANTI_NORM(buffer->activation_value);
-    config->deactivation_value = A_ANTI_NORM(buffer->deactivation_value);
-    config->trigger_distance = A_ANTI_NORM(buffer->trigger_distance);
-    config->release_distance = A_ANTI_NORM(buffer->release_distance);
-    config->trigger_speed = A_ANTI_NORM(buffer->trigger_speed);
-    config->release_speed = A_ANTI_NORM(buffer->release_speed);
-    config->upper_deadzone = A_ANTI_NORM(buffer->upper_deadzone);
-    config->lower_deadzone = A_ANTI_NORM(buffer->lower_deadzone);
-#if defined(NEXUS_ENABLE) && NEXUS_IS_SLAVE
-    config->upper_bound = buffer->upper_bound;
-    config->lower_bound = buffer->lower_bound;
-#endif
-}
+static uint8_t debug_length;
+static uint16_t debug_buffer[7];
 
 void packet_process_buffer(uint8_t *buf, uint16_t len)
 {
@@ -115,8 +77,40 @@ void packet_process_buffer(uint8_t *buf, uint16_t len)
             break;
         }
         break;
-    case PACKET_CODE_ACTION:
-        keyboard_operation_event_handler(MK_VIRTUAL_EVENT(((((PacketBase*)packet)->buf[0]) << 8) | KEYBOARD_OPERATION, KEYBOARD_EVENT_KEY_DOWN, NULL));
+    case PACKET_CODE_EVENT:
+        {
+            PacketEvent* packet_event = (PacketEvent*)packet;
+            Key *key = packet_event->is_virtual ? NULL : keyboard_get_key(packet_event->id);
+            uint8_t report_state = false;
+            if (key != NULL)
+            {
+                report_state = ((Key*)key)->report_state;
+#ifdef KEY_CALLBACK_ENABLE
+                switch (packet_event->event)
+                {
+                case KEYBOARD_EVENT_KEY_DOWN:
+                    key_emit(key, KEY_EVENT_DOWN);
+                    break;
+                case KEYBOARD_EVENT_KEY_UP:
+                    key_emit(key, KEY_EVENT_UP);
+                    break;
+                default:
+                    break;
+                }
+#endif
+            }
+            KeyboardEvent event = {
+                .keycode = packet_event->use_keymap ? layer_cache_get_keycode(packet_event->id) : packet_event->keycode,
+                .event = packet_event->event,
+                .is_virtual = packet_event->is_virtual,
+                .key = key,
+            };      
+            keyboard_event_handler(event);
+            if (key != NULL)
+            {
+                keyboard_key_set_report_state((Key*)event.key, report_state);//protect key state
+            }
+        }
         break;
     case PACKET_CODE_LARGE_SET:
     case PACKET_CODE_LARGE_GET:
@@ -139,13 +133,31 @@ void packet_process_advanced_key(PacketData*data)
 {   
     PacketAdvancedKey* packet = (PacketAdvancedKey*)data;
     uint16_t key_index = packet->index;
+    AdvancedKeyConfiguration config_buffer;
     if (data->code == PACKET_CODE_SET)
     {
-        command_advanced_key_config_anti_normalize(&g_keyboard_advanced_keys[key_index].config, &packet->data);
+        memcpy(&config_buffer, &packet->data, sizeof(AdvancedKeyConfiguration));
+        AdvancedKeyConfiguration* config = &g_keyboard_advanced_keys[key_index].config;
+        config->mode = config_buffer.mode;
+#if defined(NEXUS_ENABLE) && NEXUS_IS_SLAVE
+        config->calibration_mode = config_buffer.calibration_mode;
+#endif
+        config->activation_value = config_buffer.activation_value;
+        config->deactivation_value = config_buffer.deactivation_value;
+        config->trigger_distance = config_buffer.trigger_distance;
+        config->release_distance = config_buffer.release_distance;
+        config->trigger_speed = config_buffer.trigger_speed;
+        config->release_speed = config_buffer.release_speed;
+        config->upper_deadzone = config_buffer.upper_deadzone;
+        config->lower_deadzone = config_buffer.lower_deadzone;
+#if defined(NEXUS_ENABLE) && NEXUS_IS_SLAVE
+        config->upper_bound = config_buffer.upper_bound;
+        config->lower_bound = config_buffer.lower_bound;
+#endif
     }
     else if (data->code == PACKET_CODE_GET)
-    {
-        command_advanced_key_config_normalize(&packet->data, &g_keyboard_advanced_keys[key_index].config);
+    {   
+        memcpy(&packet->data, &g_keyboard_advanced_keys[key_index].config, sizeof(AdvancedKeyConfiguration));
     }
 }
 
@@ -217,7 +229,7 @@ void packet_process_rgb_config(PacketData*data)
                 packet->data[i].r = g_rgb_configs[rgb_index].rgb.r;
                 packet->data[i].g = g_rgb_configs[rgb_index].rgb.g;
                 packet->data[i].b = g_rgb_configs[rgb_index].rgb.b;
-                memcpy(&packet->data[i].speed, &g_rgb_configs[rgb_index].speed, sizeof(float));
+                packet->data[i].speed = g_rgb_configs[rgb_index].speed;
             }
         }
     }
@@ -253,42 +265,23 @@ void packet_process_dynamic_key(PacketData*data)
     {       
         if (packet->index<DYNAMIC_KEY_NUM)
         {
-            switch (((DynamicKey*)packet->dynamic_key)->type)
-            {
-            case DYNAMIC_KEY_STROKE:
-                dynamic_key_stroke_anti_normalize((DynamicKeyStroke4x4*)&g_dynamic_keys[packet->index],
-                    (DynamicKeyStroke4x4Normalized*)&packet->dynamic_key);
-                break;
-            default:
-                memcpy(&g_dynamic_keys[packet->index], &packet->dynamic_key, sizeof(DynamicKey));
-                break;
-            }
+            memcpy(&g_dynamic_keys[packet->index], &packet->dynamic_key, sizeof(DynamicKey));
         }
     }
     else if (data->code == PACKET_CODE_GET)
     {
         packet->type = PACKET_DATA_DYNAMIC_KEY;
         uint8_t dk_index = packet->index;
-        if (dk_index >= DYNAMIC_KEY_NUM)
+        if (dk_index < DYNAMIC_KEY_NUM)
         {
-            return;
-        }
-        switch (g_dynamic_keys[dk_index].type)
-        {
-        case DYNAMIC_KEY_STROKE:
-            dynamic_key_stroke_normalize((DynamicKeyStroke4x4Normalized*)&packet->dynamic_key,
-                (DynamicKeyStroke4x4*)&g_dynamic_keys[dk_index]);
-            break;
-        default:
             memcpy(&packet->dynamic_key,&g_dynamic_keys[dk_index],sizeof(DynamicKey));
-            break;
         }
     }
 }
 
 void packet_process_profile_index(PacketData*data)
 {
-    PacketConfigIndex* packet = (PacketConfigIndex*)data;
+    PacketProfileIndex* packet = (PacketProfileIndex*)data;
     if (data->code == PACKET_CODE_SET)
     {       
         keyboard_set_profile_index(packet->index);
@@ -330,9 +323,12 @@ void packet_process_debug(PacketData*data)
     PacketDebug* packet = (PacketDebug*)data;
     if (data->code == PACKET_CODE_GET)
     {       
+        packet->tick = g_keyboard_tick;
+            debug_length = packet->length;
         for (uint8_t i = 0; i < packet->length; i++)
         {
             uint8_t key_index =  packet->data[i].index;
+            debug_buffer[i] = key_index;
             if (key_index < ADVANCED_KEY_NUM)
             {
                 packet->data[i].raw = g_keyboard_advanced_keys[key_index].raw;
@@ -348,6 +344,14 @@ void packet_process_macro(PacketData*data)
 {
 #ifdef MACRO_ENABLE
     PacketMacro* packet = (PacketMacro*)data;
+    if (packet->length>4)
+    {
+        return;
+    }
+    if (packet->macro_index >= MACRO_NUM) 
+    {
+        return;
+    }
     if (data->code == PACKET_CODE_SET)
     {
         for (uint8_t i = 0; i < packet->length; i++)
@@ -393,11 +397,45 @@ void packet_process_macro(PacketData*data)
 void packet_process_feature(PacketData *data)
 {
     PacketFeature *packet = (PacketFeature *)data;
-
+    UNUSED(packet);
     if (data->code == PACKET_CODE_GET)
     {
         //todo
     }
+}
+
+void packet_send_version_packet(void)
+{
+    uint8_t buf[64] = {0};
+    PacketVersion* packet = (PacketVersion*)buf;
+    packet->code = PACKET_CODE_GET;
+    packet->type = PACKET_DATA_VERSION;
+    packet_process_buffer((uint8_t*)packet, sizeof(PacketVersion));
+    hid_send_raw((uint8_t*)packet, 63);
+}
+
+void packet_send_debug_packet(void)
+{
+#if DEBUG_INTERVAL > 0
+    static uint16_t timer;
+    timer++;
+    if (timer < DEBUG_INTERVAL)
+    {
+        return;
+    }
+    timer = 0;
+#endif
+    uint8_t buf[64];
+    PacketDebug* packet = (PacketDebug*)buf;
+    packet->code = PACKET_CODE_GET;
+    packet->type = PACKET_DATA_DEBUG;
+    packet->length = debug_length;
+    for (uint8_t i = 0; i < debug_length; i++)
+    {
+        packet->data[i].index = debug_buffer[i];
+    }
+    packet_process_buffer((uint8_t*)packet, sizeof(PacketDebug) + debug_length * sizeof(packet->data[0]));
+    hid_send_raw((uint8_t*)packet, 63);
 }
 
 __WEAK void packet_process_user(uint8_t *buf, uint16_t len)

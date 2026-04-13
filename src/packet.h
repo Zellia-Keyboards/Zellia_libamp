@@ -14,7 +14,7 @@ extern "C" {
 #endif
 
 enum {
-  PACKET_CODE_ACTION = 0x00,
+  PACKET_CODE_EVENT = 0x00,
   PACKET_CODE_SET = 0x01,
   PACKET_CODE_GET = 0x02,
   PACKET_CODE_LOG = 0x03,
@@ -46,10 +46,15 @@ typedef struct __PacketBase
   uint8_t buf[];
 } __PACKED PacketBase;
 
-typedef struct __PacketCommand
+typedef struct __PacketEvent
 {
   uint8_t code;
-} __PACKED PacketCommand;
+  uint8_t event;
+  uint16_t keycode;
+  uint16_t id;
+  uint8_t is_virtual;
+  uint8_t use_keymap;
+} __PACKED PacketEvent;
 
 typedef struct __PacketData
 {
@@ -62,8 +67,8 @@ typedef struct __PacketAdvancedKey
   uint8_t code;
   uint8_t type;
   uint16_t index;
-  AdvancedKeyConfigurationNormalized data;
-} PacketAdvancedKey;
+  AdvancedKeyConfiguration data;
+} __PACKED PacketAdvancedKey;
 
 typedef struct __PacketRGBBaseConfig
 {
@@ -76,7 +81,7 @@ typedef struct __PacketRGBBaseConfig
   uint8_t secondary_r;
   uint8_t secondary_g;
   uint8_t secondary_b;
-  float speed;
+  uint16_t speed;
   uint16_t direction;
   uint8_t density;
   uint8_t brightness;
@@ -91,7 +96,7 @@ typedef struct __PacketRGBConfig
   uint8_t r;
   uint8_t g;
   uint8_t b;
-  float speed;
+  uint16_t speed;
 } __PACKED PacketRGBConfig;
 
 typedef struct __PacketRGBConfigs
@@ -106,7 +111,7 @@ typedef struct __PacketRGBConfigs
     uint8_t r;
     uint8_t g;
     uint8_t b;
-    float speed;
+    uint16_t speed;
   } __PACKED data[];
 } __PACKED PacketRGBConfigs;
 
@@ -129,12 +134,12 @@ typedef struct __PacketDynamicKey
   uint8_t dynamic_key[];
 } __PACKED PacketDynamicKey;
 
-typedef struct __PacketConfigIndex
+typedef struct __PacketProfileIndex
 {
   uint8_t code;
   uint8_t type;
   uint8_t index;
-} __PACKED PacketConfigIndex;
+} __PACKED PacketProfileIndex;
 
 
 typedef struct __PacketConfig
@@ -155,13 +160,14 @@ typedef struct __PacketDebug
   uint8_t code;
   uint8_t type;
   uint8_t length;
+  uint32_t tick;
   struct
   {
     uint16_t index;
     uint8_t state;
     uint8_t report_state;
-    float raw;
-    float value;
+    uint16_t raw;
+    uint16_t value;
   } __PACKED data[];
 } __PACKED PacketDebug;
 
@@ -253,6 +259,9 @@ void packet_process_config(PacketData*data);
 void packet_process_debug(PacketData*data);
 void packet_process_macro(PacketData*data);
 void packet_process_feature(PacketData*data);
+
+void packet_send_version_packet(void);
+void packet_send_debug_packet(void);
 void packet_process_user(uint8_t *buf, uint16_t len);
 void large_packet_process(PacketLargeData *buf);
 
