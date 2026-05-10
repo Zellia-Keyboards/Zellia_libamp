@@ -50,10 +50,10 @@ typedef struct lfs_fsinfo FileSystemStat;
 typedef lfs_dir_t Directory;
 typedef lfs_soff_t FilePosition;
 #else
-typedef void File;
-typedef void FileStat;
-typedef void FileSystemStat;
-typedef void Directory;
+typedef int File;
+typedef int FileStat;
+typedef int FileSystemStat;
+typedef int Directory;
 typedef long FilePosition;
 #endif
 
@@ -70,7 +70,7 @@ int fs_init(void);
 int fs_open(File * file, const char * name, size_t flags);
 int fs_close(File * file);
 int fs_unlink(const char * name);
-int fs_rename(const char * old, const char * new);
+int fs_rename(const char * old, const char * new_name);
 size_t fs_read(File *file, void *ptr, size_t size);
 size_t fs_write(File *file, void *ptr, size_t size);
 int fs_seek(File *file,  FilePosition offset, int whence);

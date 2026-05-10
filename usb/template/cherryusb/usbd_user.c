@@ -12,41 +12,140 @@
 #include "usbd_mtp.h"
 #endif
 
-#if defined(MTP_ENABLE) || defined(GAMEPAD_ENABLE)
-#define USBD_MSOS_VENDOR_CODE 0x20
-
-static const char msosv1_string_descriptor[] = {
-    0x12,                       /* bLength */
-    0x03,                       /* bDescriptorType */
-    'M', 0, 'S', 0, 'F', 0, 'T', 0, '1', 0, '0', 0, '0', 0, /* qwSignature "MSFT100" */
-    USBD_MSOS_VENDOR_CODE,      /* bMS_VendorCode */
-    0x00                        /* bPad */
-};
-#endif
-
 #if defined(GAMEPAD_ENABLE)
-//#include "usbd_gamepad.h"
 #include "gamepad.h"
-#define USB_MSOSV1_COMP_ID_FUNCTION_XINPUT_DESCRIPTOR_INIT(bFirstInterfaceNumber) \
-    bFirstInterfaceNumber,                          /* bFirstInterfaceNumber */\
-    0x01,                                           /* reserved1 */            \
-    'X', 'U', 'S', 'B', '2', '0', 0x00, 0x00,       /* compatibleID[8] */      \
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, /* subCompatibleID[8] */   \
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00              /* reserved2[6] */
+#endif
 
-static const uint8_t msosv1_compat_id_descriptor[] = {
-    USB_MSOSV1_COMP_ID_HEADER_DESCRIPTOR_INIT(1),
-    USB_MSOSV1_COMP_ID_FUNCTION_XINPUT_DESCRIPTOR_INIT(XINPUT_INTERFACE)
+#if defined(WEBUSB_ENABLE) || defined(GAMEPAD_ENABLE) || defined(MTP_ENABLE)
+#define MSOS20_ENABLE
+#define MSOS20_VENDOR_CODE 0x21
+#endif
+
+#ifdef WEBUSB_ENABLE
+#define WEBUSB_VENDOR_CODE 0x22
+
+#ifndef WEBUSB_URL
+#define WEBUSB_URL "emi-keyboard-configurator.vercel.app"
+#endif
+#define URL_DESCRIPTOR_LENGTH (3 + sizeof(WEBUSB_URL) - 1)
+static struct webusb_url_descriptor_t {
+    uint8_t bLength;
+    uint8_t bDescriptorType;
+    uint8_t bScheme;
+    char url[sizeof(WEBUSB_URL)];
+} __attribute__((packed)) USBD_WebUSBURLDescriptor = {
+    .bLength = URL_DESCRIPTOR_LENGTH,
+    .bDescriptorType = WEBUSB_URL_TYPE,
+    .bScheme = WEBUSB_URL_SCHEME_HTTPS,
+    .url = WEBUSB_URL
 };
 
-static struct usb_msosv1_descriptor msosv1_desc = {
-    .string = (const uint8_t *)msosv1_string_descriptor,
-    .vendor_code = USBD_MSOS_VENDOR_CODE,
-    .compat_id = msosv1_compat_id_descriptor,
-    .comp_id_property = NULL
+static struct usb_webusb_descriptor webusb_url_desc = {
+    .vendor_code = WEBUSB_VENDOR_CODE,
+    .string = (const uint8_t *)&USBD_WebUSBURLDescriptor,
+    .string_len = URL_DESCRIPTOR_LENGTH
 };
 #endif
 
+#ifdef MSOS20_ENABLE
+
+#ifdef GAMEPAD_ENABLE
+    #define LEN_GAMEPAD 28
+#else
+    #define LEN_GAMEPAD 0
+#endif
+
+#ifdef WEBUSB_ENABLE
+    #define LEN_WEBUSB USB_MSOSV2_COMP_ID_FUNCTION_WINUSB_MULTI_DESCRIPTOR_LEN // 160
+#else
+    #define LEN_WEBUSB 0
+#endif
+
+#ifdef MTP_ENABLE
+    #define LEN_MTP 118 // 8 + 110
+#else
+    #define LEN_MTP 0
+#endif
+
+#define MSOS20_TOTAL_LENGTH (10 + LEN_GAMEPAD + LEN_WEBUSB + LEN_MTP)
+
+static const uint8_t WINUSB_WCIDDescriptor[] = {
+    // --- Descriptor Set Header (10 bytes) ---
+    0x0A, 0x00,             // wLength
+    0x00, 0x00,             // wDescriptorType (MS_OS_20_SET_HEADER_DESCRIPTOR)
+    0x00, 0x00, 0x03, 0x06, // dwWindowsVersion (Windows 8.1+)
+    (uint8_t)(MSOS20_TOTAL_LENGTH & 0xFF), (uint8_t)(MSOS20_TOTAL_LENGTH >> 8), // wTotalLength
+
+#ifdef GAMEPAD_ENABLE
+    // --- Function Subset: XInput (28 bytes) ---
+    0x08, 0x00,             // wLength (8)
+    0x02, 0x00,             // wDescriptorType (MS_OS_20_SUBSET_HEADER_FUNCTION)
+    XINPUT_INTERFACE,       // bFirstInterface 
+    0x00,                   // bReserved
+    28, 0x00,               // wSubsetLength (8 + 20)
+    20, 0x00,               // wLength (20)
+    0x03, 0x00,             // wDescriptorType (MS_OS_20_FEATURE_COMPATBLE_ID)
+    'X', 'U', 'S', 'B', '2', '0', 0x00, 0x00, // CompatibleID: XUSB20
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // SubCompatibleID
+#endif
+
+#ifdef WEBUSB_ENABLE
+    // --- Function Subset: WebUSB (160 bytes) ---
+    USB_MSOSV2_COMP_ID_FUNCTION_WINUSB_MULTI_DESCRIPTOR_INIT(WEBUSB_INTERFACE),
+#endif
+
+#ifdef MTP_ENABLE
+    // --- Function Subset: MTP (118 bytes) ---
+    0x08, 0x00,             // wLength (8)
+    0x02, 0x00,             // wDescriptorType (MS_OS_20_SUBSET_HEADER_FUNCTION)
+    MTP_INTERFACE,          // bFirstInterface
+    0x00,                   // bReserved
+    118, 0x00,              // wSubsetLength (8 + 110)
+
+    // Feature: Registry Property for DeviceIcon (110 bytes)
+    110, 0x00,              // wLength (110)
+    0x04, 0x00,             // wDescriptorType (MS_OS_20_FEATURE_REG_PROPERTY)
+    0x02, 0x00,             // wPropertyDataType (REG_EXPAND_SZ)
+    0x16, 0x00,             // wPropertyNameLength (22)
+    // "DeviceIcon"
+    'D', 0x00, 'e', 0x00, 'v', 0x00, 'i', 0x00, 'c', 0x00, 'e', 0x00, 
+    'I', 0x00, 'c', 0x00, 'o', 0x00, 'n', 0x00, 0x00, 0x00,
+    0x4E, 0x00,             // wPropertyDataLength (78)
+    // "%SystemRoot%\system32\imageres.dll,-53"
+    '%', 0x00, 'S', 0x00, 'y', 0x00, 's', 0x00, 't', 0x00, 'e', 0x00, 'm', 0x00, 'R', 0x00, 'o', 0x00, 'o', 0x00, 't', 0x00, '%', 0x00, 
+    '\\', 0x00, 's', 0x00, 'y', 0x00, 's', 0x00, 't', 0x00, 'e', 0x00, 'm', 0x00, '3', 0x00, '2', 0x00, '\\', 0x00, 
+    'i', 0x00, 'm', 0x00, 'a', 0x00, 'g', 0x00, 'e', 0x00, 'r', 0x00, 'e', 0x00, 's', 0x00, '.', 0x00, 'd', 0x00, 'l', 0x00, 'l', 0x00, 
+    ',', 0x00, '-', 0x00, '5', 0x00, '3', 0x00, 0x00, 0x00
+#endif
+};
+
+static struct usb_msosv2_descriptor msosv2_desc = {
+    .vendor_code = MSOS20_VENDOR_CODE,
+    .compat_id = WINUSB_WCIDDescriptor,
+    .compat_id_len = sizeof(WINUSB_WCIDDescriptor),
+};
+
+#ifdef WEBUSB_ENABLE
+    #define BOS_CAP_COUNT 2
+    #define BOS_TOTAL_LEN (5 + USB_BOS_CAP_PLATFORM_WEBUSB_DESCRIPTOR_LEN + USB_BOS_CAP_PLATFORM_WINUSB_DESCRIPTOR_LEN)
+#else
+    #define BOS_CAP_COUNT 1
+    #define BOS_TOTAL_LEN (5 + USB_BOS_CAP_PLATFORM_WINUSB_DESCRIPTOR_LEN)
+#endif
+
+__ALIGN_BEGIN static const uint8_t USBD_BinaryObjectStoreDescriptor[] = {
+    USB_BOS_HEADER_DESCRIPTOR_INIT(BOS_TOTAL_LEN, BOS_CAP_COUNT),
+#ifdef WEBUSB_ENABLE
+    USB_BOS_CAP_PLATFORM_WEBUSB_DESCRIPTOR_INIT(WEBUSB_VENDOR_CODE, 0x01),
+#endif
+    USB_BOS_CAP_PLATFORM_WINUSB_DESCRIPTOR_INIT(MSOS20_VENDOR_CODE, sizeof(WINUSB_WCIDDescriptor)),
+};
+
+static struct usb_bos_descriptor bos_desc = {
+    .string = USBD_BinaryObjectStoreDescriptor,
+    .string_len = sizeof(USBD_BinaryObjectStoreDescriptor)
+};
+#endif
 
 static const uint8_t *device_descriptor_callback(uint8_t speed)
 {
@@ -106,11 +205,6 @@ static const char *string_descriptors[] = {
 static const char *string_descriptor_callback(uint8_t speed, uint8_t index)
 {
     (void)speed;
-#if defined(MTP_ENABLE) || defined(GAMEPAD_ENABLE)
-    if (index == 0xEE) {
-        return msosv1_string_descriptor;
-    }
-#endif
     if (index >= (sizeof(string_descriptors) / sizeof(char *))) {
         return NULL;
     }
@@ -123,8 +217,12 @@ const struct usb_descriptor usb_descriptor = {
     .device_quality_descriptor_callback = device_quality_descriptor_callback,
     .other_speed_descriptor_callback = other_speed_config_descriptor_callback,
     .string_descriptor_callback = string_descriptor_callback,
-#if defined(GAMEPAD_ENABLE)
-    .msosv1_descriptor = &msosv1_desc,
+#if defined(WEBUSB_ENABLE)
+    .webusb_url_descriptor = &webusb_url_desc,
+#endif
+#if defined(MSOS20_ENABLE)
+    .msosv2_descriptor = &msosv2_desc,
+    .bos_descriptor = &bos_desc,
 #endif
 };
 

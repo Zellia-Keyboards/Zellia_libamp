@@ -50,7 +50,19 @@ void gamepad_add_buffer(KeyboardEvent event)
         gamepad_set_axis(event.keycode, keyboard_get_key_analog_value(event.key));
         return;
     }
-    gamepad.buttons |= BIT(KEYCODE_GET_SUB(event.keycode));
+    switch (KEYCODE_GET_SUB(event.keycode))
+    {
+    case GAMEPAD_LT:
+        gamepad.lt = 255;
+        break;
+    case GAMEPAD_RT:
+        gamepad.rt = 255;
+        break;
+    default:
+        gamepad.buttons |= BIT(KEYCODE_GET_SUB(event.keycode));
+        break;
+    }
+    return;
 }
 
 void gamepad_set_axis(Keycode keycode, AnalogValue value)
@@ -96,14 +108,6 @@ void gamepad_set_axis(Keycode keycode, AnalogValue value)
 
 int gamepad_buffer_send(void)
 {
-    if (gamepad.lt == 0 && gamepad.buttons & BIT(GAMEPAD_LT))
-    {
-        gamepad.lt = 0xFF;
-    }
-    if (gamepad.rt == 0 && gamepad.buttons & BIT(GAMEPAD_RT))
-    {
-        gamepad.rt = 0xFF;
-    }
     gamepad.report_id = 0;
     gamepad.report_size = 0x14;
     return hid_send_gamepad((uint8_t*)&gamepad, sizeof(Gamepad));
