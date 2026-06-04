@@ -21,13 +21,17 @@ AnalogRawValue nexus_slave_raw_values[85];
 uint8_t g_nexus_slave_buffer[NEXUS_SLAVE_NUM][NEXUS_BUFFER_SIZE];
 
 __WEAK NexusSlaveConfig g_nexus_slave_configs[NEXUS_SLAVE_NUM];
-
 static inline void nexus_config_slave(uint8_t slave_id)
 {
     const uint16_t length = g_nexus_slave_configs[slave_id].length;
     for (int i = 0; i < length; i++)
     {
-        AdvancedKey *key = &g_keyboard_advanced_keys[g_nexus_slave_configs[slave_id].map[i]];
+        const uint16_t key_index = g_nexus_slave_configs[slave_id].map[i];
+        if (key_index >= ADVANCED_KEY_NUM)
+        {
+            continue;
+        }
+        AdvancedKey *key = &g_keyboard_advanced_keys[key_index];
         PacketAdvancedKey packet;
         memset(&packet, 0, sizeof(packet));
         packet.code = PACKET_CODE_SET;
@@ -110,8 +114,15 @@ void nexus_process_buffer(uint8_t slave_id, uint8_t *buf, uint16_t len)
     if (amp_is_frame(buf, len))
     {
         uint16_t copy_len = len > NEXUS_BUFFER_SIZE ? NEXUS_BUFFER_SIZE : len;
-        memset(g_nexus_slave_buffer[slave_id], 0, NEXUS_BUFFER_SIZE);
-        memcpy(g_nexus_slave_buffer[slave_id], buf, copy_len);
+        if (buf != g_nexus_slave_buffer[slave_id])
+        {
+            memset(g_nexus_slave_buffer[slave_id], 0, NEXUS_BUFFER_SIZE);
+            memcpy(g_nexus_slave_buffer[slave_id], buf, copy_len);
+        }
+        else if (copy_len < NEXUS_BUFFER_SIZE)
+        {
+            memset(g_nexus_slave_buffer[slave_id] + copy_len, 0, NEXUS_BUFFER_SIZE - copy_len);
+        }
         return;
     }
 
@@ -190,7 +201,7 @@ int nexus_send_report(void)
 #endif
 }
 
-int nexus_send_timeout(uint8_t slave_id, const uint8_t *report, uint16_t len, uint32_t timeout)
+int nexus_request_timeout(uint8_t slave_id, const uint8_t *report, uint16_t len, uint32_t timeout, AmpFrame *out_response)
 {
     static uint8_t sequence;
     uint8_t frame_report[AMP_FRAME_REPORT_SIZE];
@@ -199,7 +210,7 @@ int nexus_send_timeout(uint8_t slave_id, const uint8_t *report, uint16_t len, ui
     {
         seq = ++sequence;
     }
-    if (report == NULL || len < 2 || len - 2 > AMP_FRAME_MAX_PAYLOAD ||
+    if (slave_id >= NEXUS_SLAVE_NUM || report == NULL || len < 2 || len - 2 > AMP_FRAME_MAX_PAYLOAD ||
         amp_frame_encode(frame_report, AMP_CHANNEL_NEXUS_CTRL, AMP_FRAME_FLAG_REQ_ACK, seq,
                          report[0], report[1], report + 2, (uint8_t)(len - 2)) != 0)
     {
@@ -224,9 +235,14 @@ int nexus_send_timeout(uint8_t slave_id, const uint8_t *report, uint16_t len, ui
             header->seq == seq &&
             (amp_frame_flags(header) & AMP_FRAME_FLAG_RESP))
         {
+            int rc = 0;
+            if (out_response != NULL && !amp_frame_decode(g_nexus_slave_buffer[slave_id], NEXUS_BUFFER_SIZE, out_response))
+            {
+                rc = 1;
+            }
             memset(g_nexus_slave_buffer[slave_id], 0, NEXUS_BUFFER_SIZE);
             slave_flags[slave_id] = false;
-            return 0;
+            return rc;
         }
         count++;
         if (count > 10000)
@@ -242,4 +258,9 @@ int nexus_send_timeout(uint8_t slave_id, const uint8_t *report, uint16_t len, ui
         }
     }
     return 1;
+}
+
+int nexus_send_timeout(uint8_t slave_id, const uint8_t *report, uint16_t len, uint32_t timeout)
+{
+    return nexus_request_timeout(slave_id, report, len, timeout, NULL);
 }

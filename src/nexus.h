@@ -7,6 +7,7 @@
 #define NEXUS_H_
 
 #include "keyboard.h"
+#include "amp_protocol.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -62,6 +63,7 @@ void nexus_process(void);
 void nexus_process_buffer(uint8_t slave_id, uint8_t *buf, uint16_t len);
 int  nexus_send_report(void);
 int nexus_send_timeout(uint8_t slave_id, const uint8_t *report, uint16_t len, uint32_t timeout);
+int nexus_request_timeout(uint8_t slave_id, const uint8_t *report, uint16_t len, uint32_t timeout, AmpFrame *out_response);
 
 #ifdef __cplusplus
 }
