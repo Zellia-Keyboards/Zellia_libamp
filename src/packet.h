@@ -8,6 +8,7 @@
 
 #include "keyboard.h"
 #include "storage.h"
+#include "amp_protocol.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -166,8 +167,9 @@ typedef struct __PacketDebug
     uint16_t index;
     uint8_t state;
     uint8_t report_state;
-    uint16_t raw;
     uint16_t value;
+    uint16_t raw;
+    uint16_t filtered_raw;
   } __PACKED data[];
 } __PACKED PacketDebug;
 
@@ -242,13 +244,15 @@ typedef struct __PacketLargeData
 typedef struct __PacketLog
 {
   uint8_t code;
-  uint8_t level;
+  uint8_t reserved;
   uint16_t length;
   uint8_t data[];
 } __PACKED PacketLog;
 
 void packet_process_buffer(uint8_t *buf, uint16_t len);
 void packet_process(uint8_t *buf, uint16_t len);
+void packet_process_frame(const AmpFrame *frame);
+bool packet_process_frame_to_report(const AmpFrame *frame, uint8_t channel, uint8_t flags, uint8_t *report);
 void packet_process_advanced_key(PacketData*data);
 void packet_process_rgb_base_config(PacketData*data);
 void packet_process_rgb_config(PacketData*data);
@@ -261,7 +265,9 @@ void packet_process_macro(PacketData*data);
 void packet_process_feature(PacketData*data);
 
 void packet_send_version_packet(void);
-void packet_send_debug_packet(void);
+void packet_process_version_notifications(void);
+void packet_schedule_debug_packet(void);
+void packet_process_debug_notifications(void);
 void packet_process_user(uint8_t *buf, uint16_t len);
 void large_packet_process(PacketLargeData *buf);
 
