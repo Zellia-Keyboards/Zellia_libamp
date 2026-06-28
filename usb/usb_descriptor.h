@@ -8,6 +8,40 @@
 #define MAX_ENDPOINTS 8
 #endif
 
+#define USB_DESC_U16_LOW(value)  ((uint8_t)((value) & 0xFF))
+#define USB_DESC_U16_HIGH(value) ((uint8_t)(((value) >> 8) & 0xFF))
+#define USB_DESC_U32_BYTE0(value) ((uint8_t)((value) & 0xFF))
+#define USB_DESC_U32_BYTE1(value) ((uint8_t)(((value) >> 8) & 0xFF))
+#define USB_DESC_U32_BYTE2(value) ((uint8_t)(((value) >> 16) & 0xFF))
+#define USB_DESC_U32_BYTE3(value) ((uint8_t)(((value) >> 24) & 0xFF))
+#define USB_DESC_U16_BYTES(value) USB_DESC_U16_LOW(value), USB_DESC_U16_HIGH(value)
+#define USB_DESC_U32_BYTES(value) USB_DESC_U32_BYTE0(value), USB_DESC_U32_BYTE1(value), USB_DESC_U32_BYTE2(value), USB_DESC_U32_BYTE3(value)
+
+#if defined(WEBUSB_ENABLE) || defined(GAMEPAD_ENABLE) || defined(MTP_ENABLE)
+#define MSOS20_ENABLE
+#ifndef MSOS20_VENDOR_CODE
+#define MSOS20_VENDOR_CODE 0x21
+#endif
+#endif
+
+#ifdef WEBUSB_ENABLE
+#ifndef WEBUSB_VENDOR_CODE
+#define WEBUSB_VENDOR_CODE 0x22
+#endif
+
+#ifndef WEBUSB_URL
+#define WEBUSB_URL "emi-keyboard-configurator.vercel.app"
+#endif
+
+#define WEBUSB_URL_DESCRIPTOR_LENGTH (sizeof(USB_Descriptor_Header_t) + sizeof(uint8_t) + sizeof(WEBUSB_URL) - 1)
+
+typedef struct {
+    USB_Descriptor_Header_t Header;
+    uint8_t Scheme;
+    char URL[sizeof(WEBUSB_URL)];
+} __PACKED USB_WebUSB_URL_Descriptor_t;
+#endif
+
 #define USB_DESC_WORD(x) (uint8_t)((x) & 0xFF), (uint8_t)(((x) >> 8) & 0xFF)
 
 #define KEYBOARD_EPSIZE 8
@@ -32,6 +66,10 @@ enum usb_interfaces {
     SHARED_INTERFACE,
     TOTAL_INTERFACES
 };
+
+#define IS_VALID_INTERFACE(i) ((i) >= 0 && (i) < TOTAL_INTERFACES)
+
+#define NEXT_EPNUM __COUNTER__
 
 /*
  * Endpoint numbers
@@ -58,6 +96,119 @@ enum usb_endpoints {
 #define RAW_EPOUT_ADDR (ENDPOINT_DIR_OUT | RAW_EPNUM)
 
 #define SHARED_EPIN_ADDR  (ENDPOINT_DIR_IN | SHARED_EPNUM)
+
+
+
+#ifndef KEYBOARD_SHARED_EP
+#define KEYBOARD_EPIN_ADDR  (ENDPOINT_DIR_IN | KEYBOARD_IN_EPNUM)
+#define KEYBOARD_EPOUT_ADDR (ENDPOINT_DIR_OUT | KEYBOARD_OUT_EPNUM)
+#endif
+
+#ifdef RAW_ENABLE
+#define RAW_EPIN_ADDR  (ENDPOINT_DIR_IN | RAW_IN_EPNUM)
+#define RAW_EPOUT_ADDR (ENDPOINT_DIR_OUT | RAW_OUT_EPNUM)
+#endif
+
+#if defined(MOUSE_ENABLE) && !defined(MOUSE_SHARED_EP)
+#define MOUSE_EPIN_ADDR  (ENDPOINT_DIR_IN | MOUSE_IN_EPNUM)
+#endif
+
+#ifdef SHARED_EP_ENABLE
+#define SHARED_EPIN_ADDR  (ENDPOINT_DIR_IN | SHARED_IN_EPNUM)
+#ifdef KEYBOARD_SHARED_EP
+#define SHARED_EPOUT_ADDR (ENDPOINT_DIR_OUT | SHARED_OUT_EPNUM)
+#endif
+#endif
+
+#ifdef MIDI_ENABLE
+#define MIDI_EPIN_ADDR  (ENDPOINT_DIR_IN | MIDI_STREAM_IN_EPNUM)
+#define MIDI_EPOUT_ADDR  (ENDPOINT_DIR_OUT | MIDI_STREAM_OUT_EPNUM)
+#endif
+
+#if defined(JOYSTICK_ENABLE) && !defined(JOYSTICK_SHARED_EP)
+#define JOYSTICK_EPIN_ADDR  (ENDPOINT_DIR_IN | JOYSTICK_IN_EPNUM)
+#endif
+
+
+#if defined(DIGITIZER_ENABLE) && !defined(DIGITIZER_SHARED_EP)
+#define DIGITIZER_EPIN_ADDR  (ENDPOINT_DIR_IN | DIGITIZER_IN_EPNUM)
+#endif
+
+#ifdef MTP_ENABLE
+#define MTP_EVT_EPIN_ADDR  (ENDPOINT_DIR_IN | MTP_EVT_EPNUM)
+#define MTP_IN_EPIN_ADDR  (ENDPOINT_DIR_IN | MTP_IN_EPNUM)
+#define MTP_OUT_EPOUT_ADDR  (ENDPOINT_DIR_OUT | MTP_OUT_EPNUM)
+#endif
+
+#ifdef GAMEPAD_ENABLE
+#define XINPUT_EPIN_ADDR  (ENDPOINT_DIR_IN | XINPUT_IN_EPNUM)
+#define XINPUT_EPOUT_ADDR (ENDPOINT_DIR_OUT | XINPUT_OUT_EPNUM)
+#endif
+
+//usb_descripotor.c before
+/*
+ * Copyright 2012 Jun Wako <wakojun@gmail.com>
+ * This file is based on:
+ *     LUFA-120219/Demos/Device/Lowlevel/KeyboardMouse
+ *     LUFA-120219/Demos/Device/Lowlevel/GenericHID
+ */
+
+/*
+                         LUFA Library
+         Copyright (C) Dean Camera, 2012.
+
+    dean [at] fourwalledcubicle [dot] com
+                     www.lufa-lib.org
+*/
+
+/*
+    Copyright 2012  Dean Camera (dean [at] fourwalledcubicle [dot] com)
+    Copyright 2010  Denver Gingerich (denver [at] ossguy [dot] com)
+
+    Permission to use, copy, modify, distribute, and sell this
+    software and its documentation for any purpose is hereby granted
+    without fee, provided that the above copyright notice appear in
+    all copies and that both that the copyright notice and this
+    permission notice and warranty disclaimer appear in supporting
+    documentation, and that the name of the author not be used in
+    advertising or publicity pertaining to distribution of the
+    software without specific, written prior permission.
+
+    The author disclaim all warranties with regard to this
+    software, including all implied warranties of merchantability
+    and fitness.  In no event shall the author be liable for any
+    special, indirect or consequential damages or any damages
+    whatsoever resulting from loss of use, data or profits, whether
+    in an action of contract, negligence or other tortious action,
+    arising out of or in connection with the use or performance of
+    this software.
+*/
+
+#ifndef RAW_USAGE_PAGE
+#    define RAW_USAGE_PAGE 0xFF60
+#endif
+
+#ifndef RAW_USAGE_ID
+#    define RAW_USAGE_ID 0x61
+#endif
+
+#ifdef JOYSTICK_ENABLE
+#    include "joystick.h"
+#endif
+
+#ifdef OS_DETECTION_ENABLE
+#    include "os_detection.h"
+#endif
+
+#if defined(SERIAL_NUMBER) || (defined(SERIAL_NUMBER_USE_HARDWARE_ID) && SERIAL_NUMBER_USE_HARDWARE_ID == TRUE)
+
+#    define HAS_SERIAL_NUMBER
+
+#    if defined(SERIAL_NUMBER_USE_HARDWARE_ID) && SERIAL_NUMBER_USE_HARDWARE_ID == TRUE
+#        include "hardware_id.h"
+#    endif
+
+#endif // defined(SERIAL_NUMBER) || (defined(SERIAL_NUMBER_USE_HARDWARE_ID) && SERIAL_NUMBER_USE_HARDWARE_ID == TRUE)
 
 // clang-format off
 

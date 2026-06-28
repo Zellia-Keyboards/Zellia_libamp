@@ -7,11 +7,16 @@
 #include "packet.h"
 #include "amp_protocol.h"
 #include "driver.h"
+#include "stddef.h"
 #include "string.h"
 #include "storage.h"
 #include "analog.h"
 
 #define NEXUS_TIMEOUT  POLLING_RATE
+#define NEXUS_MIN(a, b) ((a) < (b) ? (a) : (b))
+#define NEXUS_LOCAL_KEY_COUNT NEXUS_MIN(TOTAL_KEY_NUM, NEXUS_SLICE_LENGTH_MAX)
+#define NEXUS_LOCAL_ADVANCED_KEY_COUNT NEXUS_MIN(ADVANCED_KEY_NUM, NEXUS_SLICE_LENGTH_MAX)
+#define NEXUS_LOCAL_BITMAP_SIZE ((NEXUS_LOCAL_KEY_COUNT + 7) / 8)
 
 static bool slave_flags[NEXUS_SLAVE_NUM];
 static uint32_t slave_bitmap[NEXUS_SLAVE_NUM][(NEXUS_SLICE_LENGTH_MAX+31)/32];
@@ -21,24 +26,47 @@ AnalogRawValue nexus_slave_raw_values[85];
 uint8_t g_nexus_slave_buffer[NEXUS_SLAVE_NUM][NEXUS_BUFFER_SIZE];
 
 __WEAK NexusSlaveConfig g_nexus_slave_configs[NEXUS_SLAVE_NUM];
-static inline void nexus_config_slave(uint8_t slave_id)
+
+static uint16_t nexus_slave_config_length(uint8_t slave_id)
 {
-    const uint16_t length = g_nexus_slave_configs[slave_id].length;
-    for (int i = 0; i < length; i++)
+    uint16_t length = g_nexus_slave_configs[slave_id].length;
+    if (length > NEXUS_SLICE_LENGTH_MAX)
     {
-        const uint16_t key_index = g_nexus_slave_configs[slave_id].map[i];
-        if (key_index >= ADVANCED_KEY_NUM)
+        length = NEXUS_SLICE_LENGTH_MAX;
+    }
+    return length;
+}
+
+static int nexus_send_advanced_key_config(uint8_t slave_id, uint16_t local_index, uint16_t key_index)
+{
+    PacketAdvancedKey packet;
+    memset(&packet, 0, sizeof(packet));
+    packet.code = PACKET_CODE_SET;
+    packet.type = PACKET_DATA_ADVANCED_KEY;
+    packet.index = local_index;
+    memcpy(&packet.data, &g_keyboard_advanced_keys[key_index].config, sizeof(AdvancedKeyConfiguration));
+    return nexus_send_timeout(slave_id, (const uint8_t *)&packet, sizeof(packet), NEXUS_TIMEOUT);
+}
+
+static inline int nexus_config_slave(uint8_t slave_id)
+{
+    const uint16_t length = nexus_slave_config_length(slave_id);
+    const uint16_t *map = g_nexus_slave_configs[slave_id].map;
+    int ret = 0;
+
+    if (map == NULL)
+    {
+        return 0;
+    }
+
+    for (uint16_t i = 0; i < length; i++)
+    {
+        const uint16_t key_index = map[i];
+        if (key_index >= ADVANCED_KEY_NUM ||
+            nexus_send_advanced_key_config(slave_id, i, key_index) != 0)
         {
-            continue;
+            ret = 1;
         }
-        AdvancedKey *key = &g_keyboard_advanced_keys[key_index];
-        PacketAdvancedKey packet;
-        memset(&packet, 0, sizeof(packet));
-        packet.code = PACKET_CODE_SET;
-        packet.type = PACKET_DATA_ADVANCED_KEY;
-        packet.index = i;
-        memcpy(&packet.data, &key->config, sizeof(AdvancedKeyConfiguration));
-        nexus_send_timeout(slave_id, (const uint8_t *)&packet, sizeof(packet), NEXUS_TIMEOUT);
         /*
         PacketKeymap *packet_keymap = (PacketKeymap *)buffer;
         memset(buffer, 0, sizeof(packet));
@@ -54,13 +82,43 @@ static inline void nexus_config_slave(uint8_t slave_id)
         }
         */
     }
+    return ret;
+}
+
+int nexus_sync_advanced_key_config(uint16_t key_index)
+{
+    if (key_index >= ADVANCED_KEY_NUM)
+    {
+        return 1;
+    }
+
+    int ret = 0;
+    for (uint8_t slave_id = 0; slave_id < NEXUS_SLAVE_NUM; slave_id++)
+    {
+        const uint16_t length = nexus_slave_config_length(slave_id);
+        const uint16_t *map = g_nexus_slave_configs[slave_id].map;
+        if (map == NULL)
+        {
+            continue;
+        }
+
+        for (uint16_t local_index = 0; local_index < length; local_index++)
+        {
+            if (map[local_index] == key_index &&
+                nexus_send_advanced_key_config(slave_id, local_index, key_index) != 0)
+            {
+                ret = 1;
+            }
+        }
+    }
+    return ret;
 }
 
 void nexus_init(void)
 {
     for (int i = 0; i < NEXUS_SLAVE_NUM; i++)
     {
-        nexus_config_slave(i);
+        (void)nexus_config_slave(i);
     }
 }
 
@@ -75,16 +133,18 @@ void nexus_process(void)
 #else
     for (uint8_t slave_id = 0; slave_id < NEXUS_SLAVE_NUM; slave_id++)
     {
-        for (int j = 0; j < g_nexus_slave_configs[slave_id].length; j++)
+        const uint16_t length = nexus_slave_config_length(slave_id);
+        const uint16_t *map = g_nexus_slave_configs[slave_id].map;
+        if (map == NULL)
+        {
+            continue;
+        }
+
+        for (uint16_t j = 0; j < length; j++)
         {
             const bool state = BIT_GET(slave_bitmap[slave_id][j/32], j%32);
-            const uint16_t index = g_nexus_slave_configs[slave_id].map[j];
-            Key* key = keyboard_get_key(index);
-            if (key == NULL)
-            {
-                continue;
-            }
-            keyboard_key_update(key, state);
+            const uint16_t index = map[j];
+            keyboard_key_update(keyboard_get_key(index), state);
         }
     }
 #endif
@@ -132,28 +192,48 @@ void nexus_process_buffer(uint8_t slave_id, uint8_t *buf, uint16_t len)
     }
 #if NEXUS_USE_RAW
     uint16_t* raw_values = (uint16_t*)buf;
-    nexus_slave_raw_values[g_nexus_slave_configs[slave_id].map[0]] = (buf[0] & 0x7F) + ((buf[1])<<7);
-    for (int i = 1; i < g_nexus_slave_configs[slave_id].length; i++)
+    const uint16_t length = nexus_slave_config_length(slave_id);
+    const uint16_t *map = g_nexus_slave_configs[slave_id].map;
+    if (map == NULL || length == 0 || len < sizeof(uint16_t))
     {
-        if (g_nexus_slave_configs[slave_id].map[i] < TOTAL_KEY_NUM)
-        {
-            nexus_slave_raw_values[g_nexus_slave_configs[slave_id].map[i]] = raw_values[i];
-        }
+        return;
+    }
+    nexus_slave_raw_values[map[0]] = (buf[0] & 0x7F) + ((buf[1])<<7);
+    const uint16_t raw_count = len / sizeof(uint16_t);
+    for (uint16_t i = 1; i < length && i < raw_count; i++)
+    {
+        nexus_slave_raw_values[map[i]] = raw_values[i];
     }
 #else
     PacketNexus* packet = (PacketNexus*)buf;
     uint16_t index = packet->index & 0x7f;
-    memcpy(&slave_bitmap[slave_id], packet->bits, (g_nexus_slave_configs[slave_id].length+7)/8);
-    const uint16_t key_index = g_nexus_slave_configs[slave_id].map[index];
-    Key* key = keyboard_get_key(key_index);
-    if (key==NULL)
+    const uint16_t length = nexus_slave_config_length(slave_id);
+    const uint16_t *map = g_nexus_slave_configs[slave_id].map;
+#if NEXUS_SLICE_LENGTH_MAX >= 128
+    index |= ((uint16_t)(uint8_t)packet->index_high) << 7;
+#endif
+    if (map == NULL || index >= length)
     {
         return;
     }
-    if (IS_ADVANCED_KEY(key))
+
+    const size_t copy_len = (length + 7) / 8;
+    const size_t packet_bits_offset = offsetof(PacketNexus, bits);
+    if (len < packet_bits_offset + copy_len)
     {
-        ((AdvancedKey*)key)->filtered_raw = packet->raw;
-        ((AdvancedKey*)key)->value = packet->value * (1/65536.f) * ANALOG_VALUE_RANGE;
+        return;
+    }
+    memset(slave_bitmap[slave_id], 0, sizeof(slave_bitmap[slave_id]));
+    memcpy(slave_bitmap[slave_id], packet->bits, copy_len);
+
+    const uint16_t key_index = map[index];
+    if (key_index < ADVANCED_KEY_NUM)
+    {
+        AdvancedKey *advanced_key = &g_keyboard_advanced_keys[key_index];
+        advanced_key->filtered_raw = packet->raw;
+#if NEXUS_VALUE_MAX != 0
+        advanced_key->value = packet->value * (1/65536.f) * ANALOG_VALUE_RANGE;
+#endif
     }
 #endif
 #endif
@@ -164,11 +244,15 @@ int nexus_send_report(void)
 #if NEXUS_USE_RAW
     static uint8_t buffer[NEXUS_SLICE_LENGTH_MAX*sizeof(uint16_t)];
     uint16_t* raw_buffer = (uint16_t*)buffer;
+    if (NEXUS_LOCAL_ADVANCED_KEY_COUNT == 0)
+    {
+        return 0;
+    }
     uint16_t raw1 = advanced_key_read_raw(&g_keyboard_advanced_keys[0]);
     buffer[0] = raw1 & 0x7F;
     buffer[0] |= 0x80;
     buffer[1] = raw1 >> 7;
-    for (int i = 1; i < ADVANCED_KEY_NUM; i++)
+    for (uint16_t i = 1; i < NEXUS_LOCAL_ADVANCED_KEY_COUNT; i++)
     {
         AdvancedKey* advanced_key = &g_keyboard_advanced_keys[i];
         raw_buffer[i] = advanced_key_read_raw(advanced_key);
@@ -177,6 +261,15 @@ int nexus_send_report(void)
 #else
     static uint16_t counter;
     static uint8_t buffer[sizeof(PacketNexus)];
+
+    if (NEXUS_LOCAL_KEY_COUNT == 0)
+    {
+        return 0;
+    }
+    if (counter >= NEXUS_LOCAL_KEY_COUNT)
+    {
+        counter = 0;
+    }
 
     // No value field
     PacketNexus* packet = (PacketNexus*)buffer;
@@ -190,10 +283,11 @@ int nexus_send_report(void)
 #if NEXUS_VALUE_MAX != 0
     packet->value = (keyboard_get_key_analog_value(key)*NEXUS_VALUE_MAX/ANALOG_VALUE_RANGE);
 #endif
-    memcpy(packet->bits, (void*)g_keyboard_bitmap, (TOTAL_KEY_NUM+7)/8);
+    memset(packet->bits, 0, sizeof(packet->bits));
+    memcpy(packet->bits, (const void*)g_keyboard_bitmap, NEXUS_LOCAL_BITMAP_SIZE);
     nexus_report(buffer, sizeof(PacketNexus));
     counter++;
-    if (counter>=TOTAL_KEY_NUM)
+    if (counter >= NEXUS_LOCAL_KEY_COUNT)
     {
         counter = 0;
     }

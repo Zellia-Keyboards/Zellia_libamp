@@ -34,8 +34,7 @@
 #include "joystick.h"
 #endif
 #ifdef MIDI_ENABLE
-#include "qmk_midi.h"
-#include "process_midi.h"
+#include "midi.h"
 #endif
 #ifdef MACRO_ENABLE
 #include "macro.h"
@@ -513,6 +512,9 @@ void keyboard_init(void)
 #ifdef RGB_ENABLE
     rgb_init();
 #endif
+#ifdef MIDI_ENABLE
+    midi_init();
+#endif
 #if defined(MACRO_ENABLE) || defined(SCRIPT_ENABLE)
     event_cache_init();
 #endif
@@ -775,6 +777,9 @@ __WEAK void keyboard_task(void)
 #endif
 #ifdef DYNAMICKEY_ENABLE
     dynamic_key_process();
+#endif
+#ifdef MIDI_ENABLE
+    midi_task();
 #endif
 #ifdef SUSPEND_ENABLE
     if (g_keyboard_is_suspend)
