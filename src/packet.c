@@ -512,9 +512,9 @@ void packet_process_record(PacketDataHeader *data)
                 PacketRecordKeyCount *record = (PacketRecordKeyCount *)data;
                 for (uint16_t i = 0; i < record->length; i++)
                 {
-                    const uint16_t key_index = record->data[i].key_index;
 #ifdef COUNTER_ENABLE
-                    record->data[i].count = g_key_counts[key_index];
+                    const uint16_t key_index = record->data[i].key_index;
+                    record->data[i].count = key_index < TOTAL_KEY_NUM ? g_key_counts[key_index] : 0;
 #else
                     record->data[i].count = 0;
 #endif

@@ -140,6 +140,9 @@ static inline float rgb_projection(const RGBLocation *location, float direction_
 
 static void rgb_render_base(void)
 {
+#if !RGB_BASE_MODE_USE_RAINBOW && !RGB_BASE_MODE_USE_WAVE
+    return; /* no base effect compiled in */
+#else
     if (g_rgb_base_config.mode != RGB_BASE_MODE_RAINBOW && g_rgb_base_config.mode != RGB_BASE_MODE_WAVE)
     {
         return;
@@ -191,6 +194,7 @@ static void rgb_render_base(void)
     default:
         break;
     }
+#endif
 }
 
 /* ------------------------------------------------------------------------- */
@@ -438,6 +442,8 @@ static void rgb_render_keys(void)
         default:
             break;
         }
+        UNUSED(travel);     /* only some compiled-in modes use these */
+        UNUSED(temp_rgb);
     }
 }
 
