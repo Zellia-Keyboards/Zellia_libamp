@@ -3,14 +3,14 @@
  *
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
-#include"storage.h"
-#include"layer.h"
-#include"driver.h"
+#include "storage.h"
+#include "layer.h"
+#include "driver.h"
 #ifdef RGB_ENABLE
-#include"rgb.h"
+#include "rgb.h"
 #endif
 #ifdef SCRIPT_ENABLE
-#include"script.h"
+#include "script.h"
 #endif
 #include "record.h"
 #include "file_system.h"

@@ -150,42 +150,36 @@ void keyboard_report_clear(void)
 }
 
 
-int keyboard_report_send(void)
+/* Win lock drops both GUI modifiers from an outgoing report. */
+static inline void keyboard_report_apply_winlock(uint8_t *modifier)
 {
-#ifdef MIXED_KRO_ENABLE
     if (g_keyboard_config.winlock)
     {
-        keyboard_6kro_buffer.modifier &= (~(KEY_LEFT_GUI | KEY_RIGHT_GUI)); 
+        *modifier &= (uint8_t)~(KEY_LEFT_GUI | KEY_RIGHT_GUI);
     }
+}
+
+int keyboard_report_send(void)
+{
+    keyboard_report_apply_winlock(&keyboard_6kro_buffer.modifier);
 #ifdef KEYBOARD_SHARED_EP
     keyboard_6kro_buffer.report_id = REPORT_ID_KEYBOARD;
 #endif
+#ifdef NKRO_ENABLE
+    keyboard_report_apply_winlock(&keyboard_nkro_buffer.modifier);
     keyboard_nkro_buffer.report_id = REPORT_ID_NKRO;
+#endif
+#if defined(MIXED_KRO_ENABLE)
+    /* Mixed: the 6KRO report always goes out, the NKRO report carries the overflow. */
     if (g_keyboard_config.nkro)
     {
         return keyboard_6kro_report_send(&keyboard_6kro_buffer) || keyboard_nkro_report_send(&keyboard_nkro_buffer);
     }
-    else
-    {
-        return keyboard_6kro_report_send(&keyboard_6kro_buffer);
-    }
 #elif defined(NKRO_ENABLE)
     if (g_keyboard_config.nkro)
     {
-        keyboard_nkro_buffer.report_id = REPORT_ID_NKRO;
-        if (g_keyboard_config.winlock)
-        {
-            keyboard_nkro_buffer.modifier &= (~(KEY_LEFT_GUI | KEY_RIGHT_GUI)); 
-        }
         return keyboard_nkro_report_send(&keyboard_nkro_buffer);
     }
-#endif
-    if (g_keyboard_config.winlock)
-    {
-        keyboard_6kro_buffer.modifier &= (~(KEY_LEFT_GUI | KEY_RIGHT_GUI)); 
-    }
-#ifdef KEYBOARD_SHARED_EP
-    keyboard_6kro_buffer.report_id = REPORT_ID_KEYBOARD;
 #endif
     return keyboard_6kro_report_send(&keyboard_6kro_buffer);
 }
@@ -193,22 +187,23 @@ int keyboard_report_send(void)
 void keyboard_report_add(KeyboardEvent event)
 {
 #ifdef MIXED_KRO_ENABLE
-        if (keyboard_6kro_report_add(&keyboard_6kro_buffer, event.keycode) && g_keyboard_config.nkro)
-        {
-            event.keycode = KEYCODE_GET_MAIN(event.keycode);
-            keyboard_nkro_report_add(&keyboard_nkro_buffer, event.keycode);
-        }
+    /* Keys beyond the six 6KRO slots spill into the NKRO bitmap (without
+     * their modifiers, which the 6KRO report already carries). */
+    if (keyboard_6kro_report_add(&keyboard_6kro_buffer, event.keycode) && g_keyboard_config.nkro)
+    {
+        keyboard_nkro_report_add(&keyboard_nkro_buffer, KEYCODE_GET_MAIN(event.keycode));
+    }
 #elif defined(NKRO_ENABLE)
-        if (g_keyboard_config.nkro)
-        {
-            keyboard_nkro_report_add(&keyboard_nkro_buffer, event.keycode);
-        }
-        else
-        {
-            keyboard_6kro_report_add(&keyboard_6kro_buffer, event.keycode);
-        }
-#else
+    if (g_keyboard_config.nkro)
+    {
+        keyboard_nkro_report_add(&keyboard_nkro_buffer, event.keycode);
+    }
+    else
+    {
         keyboard_6kro_report_add(&keyboard_6kro_buffer, event.keycode);
+    }
+#else
+    keyboard_6kro_report_add(&keyboard_6kro_buffer, event.keycode);
 #endif
 }
 
@@ -234,7 +229,9 @@ void keyboard_keycode_event_handler(KeyboardEvent event)
     }
 }
 
-void keyboard_key_event_down_dispatch(KeyboardEvent event)
+/* A press or release that a handler accepted: queue it for the foreground
+ * poller, let scripts and macro recording see it, and run the key callbacks. */
+static void keyboard_key_event_dispatch(KeyboardEvent event, bool pressed)
 {
     event_loop_queue_push(&event_buffer, (EventLoopQueueElm){event, g_keyboard_tick});
 #ifdef SCRIPT_ENABLE
@@ -245,23 +242,25 @@ void keyboard_key_event_down_dispatch(KeyboardEvent event)
 #endif
     if (!event.is_virtual)
     {
-        keyboard_key_event_down_callback((Key*)event.key);
+        if (pressed)
+        {
+            keyboard_key_event_down_callback((Key*)event.key);
+        }
+        else
+        {
+            keyboard_key_event_up_callback((Key*)event.key);
+        }
     }
+}
+
+void keyboard_key_event_down_dispatch(KeyboardEvent event)
+{
+    keyboard_key_event_dispatch(event, true);
 }
 
 void keyboard_key_event_up_dispatch(KeyboardEvent event)
 {
-    event_loop_queue_push(&event_buffer, (EventLoopQueueElm){event, g_keyboard_tick});
-#ifdef SCRIPT_ENABLE
-    script_key_event_handler(event);
-#endif
-#ifdef MACRO_ENABLE
-    macro_record_handler(event);
-#endif
-    if (!event.is_virtual)
-    {
-        keyboard_key_event_up_callback((Key*)event.key);
-    }
+    keyboard_key_event_dispatch(event, false);
 }
 
 void keyboard_event_handler(KeyboardEvent event)
@@ -342,14 +341,12 @@ void keyboard_event_poller(KeyboardEvent event, uint32_t tick)
     }
     script_key_event_poller(event, tick);
 #endif
-    if (!event.is_virtual && event.event == KEYBOARD_EVENT_KEY_DOWN)
-    {    
-        Key * key = (Key*)event.key;
 #ifdef RGB_ENABLE
-        rgb_activate(key->id, g_keyboard_tick);
-#endif
-        // keyboard_key_event_down_callback((Key*)event.key);
+    if (!event.is_virtual && event.event == KEYBOARD_EVENT_KEY_DOWN)
+    {
+        rgb_activate(((Key*)event.key)->id, tick);
     }
+#endif
     switch (KEYCODE_GET_MAIN(event.keycode))
     {
     case SCRIPT_COLLECTION:
@@ -407,15 +404,96 @@ void keyboard_event_report_handler(KeyboardEvent event)
     }
 }
 
+#ifdef RGB_ENABLE
+#define KEYBOARD_RGB_BRIGHTNESS_STEP 16
+static void keyboard_rgb_brightness_step(int step)
+{
+    const int brightness = (int)g_rgb_base_config.brightness + step;
+    g_rgb_base_config.brightness = (uint8_t)(brightness > 255 ? 255 : (brightness < 0 ? 0 : brightness));
+}
+#endif
+
+/* Commands below KEYBOARD_CONFIG_BASE, executed on key press. */
+static void keyboard_operation_command(KeyboardEvent event, uint8_t command)
+{
+    switch (command)
+    {
+    case KEYBOARD_REBOOT:
+        keyboard_reboot();
+        break;
+    case KEYBOARD_FACTORY_RESET:
+        keyboard_factory_reset();
+        packet_notify_event(PACKET_EVENT_CONFIG_CHANGED);
+        break;
+    case KEYBOARD_SAVE:
+        keyboard_profile_save();
+        break;
+    case KEYBOARD_BOOTLOADER:
+        keyboard_jump_to_bootloader();
+        break;
+    case KEYBOARD_RESET_TO_DEFAULT:
+        keyboard_profile_reset_to_default();
+        packet_notify_event(PACKET_EVENT_CONFIG_CHANGED);
+        break;
+    case KEYBOARD_RECOVERY:
+        keyboard_profile_restore();
+        break;
+    case KEYBOARD_FORMAT_STORAGE:
+        keyboard_storage_format();
+        break;
+#ifdef RGB_ENABLE
+    case KEYBOARD_RGB_BRIGHTNESS_UP:
+        keyboard_rgb_brightness_step(KEYBOARD_RGB_BRIGHTNESS_STEP);
+        break;
+    case KEYBOARD_RGB_BRIGHTNESS_DOWN:
+        keyboard_rgb_brightness_step(-KEYBOARD_RGB_BRIGHTNESS_STEP);
+        break;
+#endif
+    case KEYBOARD_PROFILE0:
+    case KEYBOARD_PROFILE1:
+    case KEYBOARD_PROFILE2:
+    case KEYBOARD_PROFILE3:
+        keyboard_profile_select(command - KEYBOARD_PROFILE0);
+        packet_notify_event(PACKET_EVENT_CONFIG_CHANGED);
+        break;
+    default:
+        UNUSED(event);
+        break;
+    }
+}
+
+/* Configuration bit operations encoded with KEYBOARD_CONFIG(). The action
+ * numbering (0 clears, 1 sets, 2 toggles) is the one host configurators emit
+ * and is kept as is. */
+static void keyboard_operation_config(KeyboardEvent event)
+{
+    const uint8_t bit = KEYBOARD_CONFIG_GET_INDEX(event.keycode);
+    switch (KEYBOARD_CONFIG_GET_ACTION(event.keycode))
+    {
+    case KEYBOARD_CONFIG_ON:
+        BIT_RESET(g_keyboard_config.raw, bit);
+        break;
+    case KEYBOARD_CONFIG_OFF:
+        BIT_SET(g_keyboard_config.raw, bit);
+        break;
+    case KEYBOARD_CONFIG_TOGGLE:
+        BIT_TOGGLE(g_keyboard_config.raw, bit);
+        break;
+    default:
+        break;
+    }
+}
+
 static void keyboard_operation_event_handler_(KeyboardEvent event)
 {
-    uint8_t modifier = KEYCODE_GET_SUB(event.keycode);
+    const uint8_t code = KEYBOARD_OPERATION_GET_CODE(event.keycode);
     switch (event.event)
     {
     case KEYBOARD_EVENT_KEY_UP:
         keyboard_key_event_up_dispatch(event);
-        if (modifier == KEYBOARD_CALIBRATE)
+        if (KEYCODE_GET_SUB(event.keycode) == KEYBOARD_CALIBRATE)
         {
+            /* Calibration runs on release, after a delay, so the hand is off the keys. */
 #if defined(NEXUS_ENABLE) && !NEXUS_IS_SLAVE
             nexus_calibrate();
 #endif
@@ -424,87 +502,14 @@ static void keyboard_operation_event_handler_(KeyboardEvent event)
         break;
     case KEYBOARD_EVENT_KEY_DOWN:
         keyboard_key_event_down_dispatch(event);
-        if ((modifier & 0x3F) < KEYBOARD_CONFIG_BASE)
+        if (code < KEYBOARD_CONFIG_BASE)
         {
-            switch (modifier & 0x3F)
-            {
-            case KEYBOARD_REBOOT:
-                keyboard_reboot();
-                break;
-            case KEYBOARD_FACTORY_RESET:
-                keyboard_factory_reset();
-                packet_notify_event(PACKET_EVENT_CONFIG_CHANGED);
-                break;
-            case KEYBOARD_SAVE:
-                keyboard_profile_save();
-                break;
-            case KEYBOARD_BOOTLOADER:
-                keyboard_jump_to_bootloader();
-                break;
-            case KEYBOARD_RESET_TO_DEFAULT:
-                keyboard_profile_reset_to_default();
-                packet_notify_event(PACKET_EVENT_CONFIG_CHANGED);
-                break;
-            case KEYBOARD_RECOVERY:
-                keyboard_profile_restore();
-                break;
-            case KEYBOARD_FORMAT_STORAGE:
-                keyboard_storage_format();
-                break;
-#ifdef RGB_ENABLE
-            case KEYBOARD_RGB_BRIGHTNESS_UP:
-                if ((int16_t)g_rgb_base_config.brightness + 16 < 255)
-                {
-                    g_rgb_base_config.brightness+=16;
-                }
-                else
-                {
-                    g_rgb_base_config.brightness = 255;
-                }
-                break;
-            case KEYBOARD_RGB_BRIGHTNESS_DOWN:
-                if ((int16_t)g_rgb_base_config.brightness - 16 > 0)
-                {
-                    g_rgb_base_config.brightness-=16;
-                }
-                else
-                {
-                    g_rgb_base_config.brightness = 0;
-                }
-                break;
-#endif
-            case KEYBOARD_PROFILE0:
-            case KEYBOARD_PROFILE1:
-            case KEYBOARD_PROFILE2:
-            case KEYBOARD_PROFILE3:
-                keyboard_profile_select((event.keycode >> 8) & 0x0F);
-                packet_notify_event(PACKET_EVENT_CONFIG_CHANGED);
-                break;
-            default:
-                break;
-            }
+            keyboard_operation_command(event, code);
         }
         else
         {
-            switch ((modifier >> 6) & 0x03)
-            {
-            case 0:
-                BIT_RESET(*((uint8_t*)&g_keyboard_config), ((modifier & 0x3F) - KEYBOARD_CONFIG_BASE));
-                break;
-            case 1:
-                BIT_SET(*((uint8_t*)&g_keyboard_config), ((modifier & 0x3F) - KEYBOARD_CONFIG_BASE));
-                break;
-            case 2:
-                BIT_TOGGLE(*((uint8_t*)&g_keyboard_config), ((modifier & 0x3F) - KEYBOARD_CONFIG_BASE));
-                break;
-            default:
-                break;
-            }  
+            keyboard_operation_config(event);
         }
-        break;
-    case KEYBOARD_EVENT_KEY_TRUE:
-        break;
-    case KEYBOARD_EVENT_KEY_FALSE:
         break;
     default:
         break;
@@ -844,58 +849,28 @@ void keyboard_report_send_all(void)
 #endif
 }
 
-void keyboard_task(void)
+/* Sample every local analog key and run it through the key pipeline. */
+static void keyboard_task_update_advanced_keys(void)
 {
-    keyboard_scan();
-#ifdef ENCODER_ENABLE
-    encoder_process();
-#endif
-#if defined(NEXUS_ENABLE) && NEXUS_IS_SLAVE
     for (uint16_t i = 0; i < ADVANCED_KEY_NUM; i++)
     {
-        AdvancedKey*advanced_key = &g_keyboard_advanced_keys[i];
+        AdvancedKey *advanced_key = &g_keyboard_advanced_keys[i];
         keyboard_advanced_key_update_raw(advanced_key, advanced_key_read_raw(advanced_key));
     }
-    packet_buffer_flush();
-    if (g_keyboard_config.enable_report)
-    {
-        nexus_send_report();
-    }
-    return;
-#else
-#if defined(NEXUS_ENABLE)
-    nexus_process();
-#else
-    for (uint16_t i = 0; i < ADVANCED_KEY_NUM; i++)
-    {
-        AdvancedKey*advanced_key = &g_keyboard_advanced_keys[i];
-        keyboard_advanced_key_update_raw(advanced_key, advanced_key_read_raw(advanced_key));
-    }
-#endif
-#if defined(SCRIPT_ENABLE) && !defined(SCRIPT_POLLING)
-    script_process();
-#endif
-#ifdef MACRO_ENABLE
-    macro_process();
-#endif
-#ifdef DYNAMICKEY_ENABLE
-    dynamic_key_process();
-#endif
-#ifdef MIDI_ENABLE
-    midi_task();
-#endif
+}
+
+/* Build and send the HID reports for this tick, then flush raw packets. */
+static void keyboard_task_send_reports(void)
+{
 #ifdef SUSPEND_ENABLE
     if (g_keyboard_is_suspend)
     {
-        if (g_keyboard_report_flags.raw)
+        if (!g_keyboard_report_flags.raw)
         {
-            g_keyboard_is_suspend = false;
-            send_remote_wakeup();
+            return; /* nothing to wake the host for */
         }
-        else
-        {
-            return;
-        }
+        g_keyboard_is_suspend = false;
+        send_remote_wakeup();
     }
 #endif
     if (g_keyboard_config.continuous_poll)
@@ -909,10 +884,45 @@ void keyboard_task(void)
         keyboard_report_send_all();
     }
     if (g_keyboard_config.debug)
-    {   
+    {
         packet_send_debug_packet();
     }
     packet_buffer_flush();
+}
+
+void keyboard_task(void)
+{
+    keyboard_scan();
+#ifdef ENCODER_ENABLE
+    encoder_process();
+#endif
+#if defined(NEXUS_ENABLE) && NEXUS_IS_SLAVE
+    /* A slave only samples its keys and streams them to the master. */
+    keyboard_task_update_advanced_keys();
+    packet_buffer_flush();
+    if (g_keyboard_config.enable_report)
+    {
+        nexus_send_report();
+    }
+#else
+#if defined(NEXUS_ENABLE)
+    nexus_process();
+#else
+    keyboard_task_update_advanced_keys();
+#endif
+#if defined(SCRIPT_ENABLE) && !defined(SCRIPT_POLLING)
+    script_process();
+#endif
+#ifdef MACRO_ENABLE
+    macro_process();
+#endif
+#ifdef DYNAMICKEY_ENABLE
+    dynamic_key_process();
+#endif
+#ifdef MIDI_ENABLE
+    midi_task();
+#endif
+    keyboard_task_send_reports();
 #endif
 }
 

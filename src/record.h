@@ -65,7 +65,7 @@ extern LoopArray g_kps_data;
 
 #ifdef KPS_HISTORY_ENABLE
 extern LoopArray g_kps_history;
-extern uint16_t g_kps_max_since_last_timer;
+extern uint16_t g_kps_max;
 #endif
 
 #ifdef BIT_STREAM_ENABLE

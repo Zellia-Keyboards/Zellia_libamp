@@ -18,23 +18,19 @@ void event_cache_init(void)
     event_loop_queue_init(&event_cache_buffer, event_cache_buffers, EVENT_CACHE_BUFFER_LENGTH);
 }
 
+/* Move the events queued from other contexts into the cache, then add every
+ * cached event (held virtual keys of macros and scripts) to the report. */
 void event_cache_add_to_report(void)
 {
-    EventCacheList * list = &g_event_buffer_list;
-    EventCacheListNode * last_node = &list->data[list->head];
-    UNUSED(last_node);
     event_loop_queue_foreach(&event_cache_buffer, EventLoopQueueElm, event)
     {
         event_cache_push(event->event, (void*)event->tick);
         event_loop_queue_pop(&event_cache_buffer);
     }
-    for (int16_t iterator = list->data[list->head].next; iterator >= 0;)
+    const EventCacheList *list = &g_event_buffer_list;
+    for (int16_t index = list->data[list->head].next; index >= 0; index = list->data[index].next)
     {
-        EventCacheListNode* node = &(list->data[iterator]);
-        EventCache *item = &(node->data);
-        keyboard_event_report_handler(item->event);
-        last_node = node;
-        iterator = list->data[iterator].next;
+        keyboard_event_report_handler(list->data[index].data.event);
     }
 }
 

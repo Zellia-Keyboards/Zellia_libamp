@@ -211,9 +211,15 @@ AnalogValue advanced_key_normalize(AdvancedKey *key, AnalogRawValue sample)
 }
 ```
 
+The default implementation is the same linear mapping without any division on
+the sampling path: `advanced_key_set_range()` precomputes a fixed-point scale
+when the calibrated range changes.
+
 For a non-linear magnetic response, `tools/lut_generator/lut_generator.py` can
-generate a lookup table and an `advanced_key_normalize()` override. Set its
-constants for the switch geometry:
+generate a lookup table and an `advanced_key_normalize()` override. The
+override calls `advanced_key_lut_index()`, which maps the calibrated range onto
+`0` through `LUT_LENGTH` without overflow, and reads the table at that index.
+Set the script's constants for the switch geometry:
 
 | Constant | Meaning |
 | --- | --- |
@@ -292,6 +298,8 @@ timer/RTOS schedule or from a deadline-driven bare-metal loop, at exactly
 
 Run `keyboard_process()` continuously outside the time-critical sampling path.
 It handles queued events, protocol work, and optional runtime processing.
+Calling it more often than the keyboard tick costs little: the RGB renderer
+produces at most one frame per tick and returns immediately otherwise.
 
 ```c
 int main(void)

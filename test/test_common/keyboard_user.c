@@ -913,12 +913,7 @@ static const int32_t table[8192] = {
 AnalogValue advanced_key_normalize(AdvancedKey* advanced_key, AnalogRawValue value)
 {
     const int32_t length = (int32_t)(sizeof(table) / sizeof(table[0]));
-    const int32_t delta = (int32_t)advanced_key->config.upper_bound - (int32_t)value;
-    int32_t index = (int32_t)(((int64_t)delta * advanced_key->q_scale_to_index) >> 16);
-    if (index < 0)
-    {
-        index = 0;
-    }
+    int32_t index = advanced_key_lut_index(advanced_key, value);
     if (index >= length)
     {
         index = length - 1;

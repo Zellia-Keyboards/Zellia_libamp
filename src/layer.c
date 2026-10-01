@@ -22,14 +22,16 @@ void layer_init(void)
 
 void layer_event_handler(KeyboardEvent event)
 {
-    const uint8_t layer = ((event.keycode >> 8) & 0x0F);
+    const uint8_t layer = LAYER_KEYCODE_GET_LAYER(event.keycode);
+    const uint8_t action = LAYER_KEYCODE_GET_ACTION(event.keycode);
     switch (event.event)
     {
     case KEYBOARD_EVENT_KEY_DOWN:
         keyboard_key_event_down_dispatch(event);
-        switch ((event.keycode >> 12) & 0x0F)
+        switch (action)
         {
         case LAYER_MOMENTARY:
+        case LAYER_TOGGLE:
             layer_toggle(layer);
             break;
         case LAYER_TURN_ON:
@@ -38,9 +40,6 @@ void layer_event_handler(KeyboardEvent event)
         case LAYER_TURN_OFF:
             layer_reset(layer);
             break;
-        case LAYER_TOGGLE:
-            layer_toggle(layer);
-            break;
         default:
             break;
         }
@@ -48,13 +47,9 @@ void layer_event_handler(KeyboardEvent event)
         break;
     case KEYBOARD_EVENT_KEY_UP:
         keyboard_key_event_up_dispatch(event);
-        switch ((event.keycode >> 12) & 0x0F)
+        if (action == LAYER_MOMENTARY)
         {
-        case LAYER_MOMENTARY:
-            layer_toggle(layer);
-            break;
-        default:
-            break;
+            layer_toggle(layer); /* momentary layers end with the key */
         }
         layer_cache_refresh();
         break;

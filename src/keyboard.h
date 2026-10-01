@@ -50,7 +50,14 @@ extern "C" {
 
 #define TOTAL_KEY_NUM (ADVANCED_KEY_NUM + KEY_NUM)
 
+/* KEYBOARD_OPERATION keycodes carry the operation in the sub-byte. Values
+ * below KEYBOARD_CONFIG_BASE are commands (reboot, save, profile ...); from
+ * KEYBOARD_CONFIG_BASE on, the low six bits select a configuration bit and the
+ * top two bits the action (KEYBOARD_CONFIG_ON/OFF/TOGGLE). */
 #define KEYBOARD_CONFIG(index, action) ((((KEYBOARD_CONFIG_BASE + (index)) | ((action) << 6)) << 8) | KEYBOARD_OPERATION)
+#define KEYBOARD_OPERATION_GET_CODE(keycode)  (KEYCODE_GET_SUB(keycode) & 0x3F)
+#define KEYBOARD_CONFIG_GET_INDEX(keycode)    (KEYBOARD_OPERATION_GET_CODE(keycode) - KEYBOARD_CONFIG_BASE)
+#define KEYBOARD_CONFIG_GET_ACTION(keycode)   ((KEYCODE_GET_SUB(keycode) >> 6) & 0x03)
 
 /* Milliseconds <-> keyboard ticks. Exact for every POLLING_RATE: when the rate
  * is a multiple or a divisor of 1000 Hz this is a single 32-bit multiply or

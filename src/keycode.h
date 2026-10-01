@@ -22,6 +22,8 @@ enum LayerControlKeycode {
 };
 
 #define LAYER(code,layer) (((code) << 12) | ((layer) << 8) | LAYER_CONTROL)
+#define LAYER_KEYCODE_GET_ACTION(keycode) (((keycode) >> 12) & 0x0F)
+#define LAYER_KEYCODE_GET_LAYER(keycode) (((keycode) >> 8) & 0x0F)
 
 enum ModifierKeycode
 {
@@ -672,7 +674,8 @@ enum MIDINoteKeycode
 };
 
 
-static inline uint16_t consumer_keycode_to_rawcide(uint8_t key) {
+/* Consumer page usage for a CONSUMER_COLLECTION sub-keycode. */
+static inline uint16_t consumer_keycode_to_rawcode(uint8_t key) {
   switch (key) {
   case CONSUMER_AUDIO_MUTE:
     return AUDIO_MUTE;
@@ -732,6 +735,8 @@ static inline uint16_t consumer_keycode_to_rawcide(uint8_t key) {
     return key;
   }
 }
+/* Former misspelling, kept for existing callers. */
+#define consumer_keycode_to_rawcide consumer_keycode_to_rawcode
 
 enum ScriptKeycode {
   SCRIPT_WATCH = 0,

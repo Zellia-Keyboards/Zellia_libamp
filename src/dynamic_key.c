@@ -9,10 +9,17 @@
 
 #define DK_TAP_DURATION KEYBOARD_TIME_TO_TICK(5)
 
-#define DYNAMIC_KEY_NOT_MATCH(dynamic_key, key) (KEYCODE_GET_MAIN(layer_cache_get_keycode((key)->id)) != DYNAMIC_KEY || \
-        &g_dynamic_keys[KEYCODE_GET_SUB(layer_cache_get_keycode((key)->id))] != ((DynamicKey*)(dynamic_key)))
-
 DynamicKey g_dynamic_keys[DYNAMIC_KEY_NUM];
+
+/* A dynamic key only acts while the key's current binding points back at it;
+ * a layer change or remap silently detaches it. */
+static inline bool dynamic_key_is_bound_to(const void *dynamic_key, const Key *key)
+{
+    const Keycode keycode = layer_cache_get_keycode(key->id);
+    return KEYCODE_GET_MAIN(keycode) == DYNAMIC_KEY &&
+           &g_dynamic_keys[KEYCODE_GET_SUB(keycode)] == (const DynamicKey *)dynamic_key;
+}
+#define DYNAMIC_KEY_NOT_MATCH(dynamic_key, key) (!dynamic_key_is_bound_to((dynamic_key), (key)))
 
 void dynamic_key_process(void)
 {
@@ -39,7 +46,7 @@ void dynamic_key_process(void)
     }
 }
 
-void _dynamic_key_add_to_report(DynamicKey*dynamic_key)
+static void dynamic_key_add_one_to_report(DynamicKey*dynamic_key)
 {
     switch (dynamic_key->type)
     {
@@ -90,7 +97,7 @@ void dynamic_key_add_to_report(void)
     for (int i = 0; i < DYNAMIC_KEY_NUM && g_dynamic_keys[i].type != DYNAMIC_KEY_NONE; i++)
     {
         DynamicKey*dynamic_key = &g_dynamic_keys[i];
-        _dynamic_key_add_to_report(dynamic_key);
+        dynamic_key_add_one_to_report(dynamic_key);
     }
 }
 
