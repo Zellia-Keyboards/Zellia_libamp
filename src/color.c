@@ -4,160 +4,89 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 #include "color.h"
-#include "string.h"
+
+/* All arithmetic below is single precision on purpose: Cortex-M4F/M7 cores
+ * have a float FPU only, and a double literal silently turns an expression
+ * into a software double-precision call. */
 
 void rgb_to_hsv(ColorHSV * restrict hsv, const ColorRGB * restrict rgb)
 {
-	float max;
-	float min;
-	max=rgb->r;
-	min=rgb->r;
-	max=rgb->g>max?rgb->g:max;
-	min=rgb->g<min?rgb->g:min;
-	max=rgb->b>max?rgb->b:max;
-	min=rgb->b<min?rgb->b:min;
-	if(max==min)
-	{
-		hsv->h=0;
-	}
-	else if(max==rgb->r&&rgb->g>=rgb->b)
-	{
-		hsv->h=60*(rgb->g-rgb->b)/(max-min);
-	}
-	else if(max==rgb->r && rgb->g<rgb->b)
-	{
-		hsv->h=60*(rgb->g-rgb->b)/(max-min)+360;
-	}
-	else if(max==rgb->g)
-	{
-		hsv->h=60*(rgb->b-rgb->r)/(max-min)+120;
-	}
-	else if(max==rgb->b)
-	{
-		hsv->h=60*(rgb->r-rgb->g)/(max-min)+240;
-	}
-	if(max==0)
-	{
-		hsv->s=0;
-	}
-	else
-	{
-		hsv->s=100*(1-min/max);
-	}
-	hsv->v=max*100/255;
-}
+    const float r = rgb->r;
+    const float g = rgb->g;
+    const float b = rgb->b;
+    float max = r > g ? r : g;
+    float min = r < g ? r : g;
+    max = b > max ? b : max;
+    min = b < min ? b : min;
+    const float chroma = max - min;
 
-void hsv_to_rgb(ColorRGB * restrict rgb, const ColorHSV * restrict hsv)
-{
-    float c = 0;
-    float x = 0;
-    float y = 0;
-    float z = 0;
-    float h = (float)(hsv->h);
-    float s = ((float)(hsv->s))/100.0;
-    float v = ((float)(hsv->v))/100.0;
-    if(s < 1e-6)
+    if (chroma == 0.0f)
     {
-        rgb->r=hsv->v*255.0/100.0;
-        rgb->g=hsv->v*255.0/100.0;
-        rgb->b=hsv->v*255.0/100.0;
+        hsv->h = 0;
+    }
+    else if (max == r)
+    {
+        hsv->h = (uint16_t)(g >= b ? 60.0f * (g - b) / chroma : 60.0f * (g - b) / chroma + 360.0f);
+    }
+    else if (max == g)
+    {
+        hsv->h = (uint16_t)(60.0f * (b - r) / chroma + 120.0f);
     }
     else
     {
-        h=h/60;
-        c=h-(int)h;
+        hsv->h = (uint16_t)(60.0f * (r - g) / chroma + 240.0f);
+    }
+    hsv->s = (uint8_t)(max == 0.0f ? 0.0f : 100.0f * (1.0f - min / max));
+    hsv->v = (uint8_t)(max * 100.0f / 255.0f);
+}
 
-        x = v*(1-s);
-        y = v*(1-s*c);
-        z = v*(1-s*(1-c));
-        switch (hsv->h/60)
-        {
-            case 0:
-                rgb->r = hsv->v*255.0/100.0;
-                rgb->g = z*255;
-                rgb->b = x*255;
-                break;
-            case 1:
-                rgb->r = y*255;
-                rgb->g = hsv->v*255.0/100.0;
-                rgb->b = x*255;
-                break;
-            case 2:
-                rgb->r = x*255;
-                rgb->g = hsv->v*255.0/100.0;
-                rgb->b = z*255;
-                break;
-            case 3:
-                rgb->r = x*255;
-                rgb->g = y*255;
-                rgb->b = hsv->v*255.0/100.0;
-                break;
-            case 4:
-                rgb->r = z*255;
-                rgb->g = x*255;
-                rgb->b = hsv->v*255.0/100.0;
-                break;
-            case 5:
-                rgb->r = hsv->v*255.0/100.0;
-                rgb->g = x*255;
-                rgb->b = y*255;
-                break;
-            default:
-                break;
-        }
+/* Integer HSV to RGB. s and v are percentages and the hue fraction is in
+ * sixtieths of a degree, so every divisor is a compile-time constant (which
+ * the compiler turns into a multiply): no runtime division and no floating
+ * point for an operation that runs once per LED per frame in the hue-driven
+ * effects. Results are the floor of the exact value, as before. */
+void hsv_to_rgb(ColorRGB * restrict rgb, const ColorHSV * restrict hsv)
+{
+    const uint32_t v = hsv->v > 100 ? 100 : hsv->v;
+    const uint32_t s = hsv->s > 100 ? 100 : hsv->s;
+    const uint8_t value = (uint8_t)(v * 255u / 100u);
+    if (s == 0)
+    {
+        rgb->r = value;
+        rgb->g = value;
+        rgb->b = value;
+        return;
+    }
+    const uint32_t sector = hsv->h / 60u;
+    const uint32_t fraction = hsv->h - sector * 60u;    /* 0..59 sixtieths of a degree */
+    const uint8_t x = (uint8_t)(v * (100u - s) * 255u / 10000u);
+    const uint8_t y = (uint8_t)(v * (6000u - s * fraction) * 255u / 600000u);
+    const uint8_t z = (uint8_t)(v * (6000u - s * (60u - fraction)) * 255u / 600000u);
+    switch (sector)
+    {
+        case 0:  rgb->r = value; rgb->g = z;     rgb->b = x;     break;
+        case 1:  rgb->r = y;     rgb->g = value; rgb->b = x;     break;
+        case 2:  rgb->r = x;     rgb->g = value; rgb->b = z;     break;
+        case 3:  rgb->r = x;     rgb->g = y;     rgb->b = value; break;
+        case 4:  rgb->r = z;     rgb->g = x;     rgb->b = value; break;
+        case 5:  rgb->r = value; rgb->g = x;     rgb->b = y;     break;
+        default: rgb->r = 0;     rgb->g = 0;     rgb->b = 0;     break; /* hue out of range */
     }
 }
 
-void color_get_rgb(const Color* restrict color, ColorRGB* restrict rgb)
+void colorf_set_hsv(ColorFloat * restrict color, const ColorHSV * restrict hsv)
 {
-    memcpy(rgb,color,sizeof(Color));
-}
-void color_set_rgb(Color* restrict  color, const ColorRGB* restrict rgb)
-{
-    memcpy(color,rgb,sizeof(Color));
-}
-
-void colorf_set_rgb(ColorFloat * restrict color, const ColorRGB * restrict rgb)
-{
-	color->r = rgb->r;
-	color->g = rgb->g;
-	color->b = rgb->b;
-}
-
-void colorf_set_hsv(ColorFloat * restrict color, const ColorHSV * restrict rgb)
-{
-	ColorRGB temp_rgb = {0,0,0};
-	hsv_to_rgb(&temp_rgb, rgb);
-	colorf_set_rgb(color, &temp_rgb);
+    ColorRGB temp_rgb = {0, 0, 0};
+    hsv_to_rgb(&temp_rgb, hsv);
+    colorf_set_rgb(color, &temp_rgb);
 }
 
 void color_get_hsv(const Color* restrict color, ColorHSV* restrict hsv)
 {
     rgb_to_hsv(hsv, color);
 }
+
 void color_set_hsv(Color* restrict color, const ColorHSV* restrict hsv)
 {
     hsv_to_rgb(color, hsv);
-}
-
-void color_mix(Color *dest, const Color *source)
-{
-	uint16_t temp_r = dest->r + source->r;
-    uint16_t temp_g = dest->g + source->g;
-    uint16_t temp_b = dest->b + source->b;
-    
-    dest->r = temp_r > 255 ? 255 : (uint8_t)temp_r;
-    dest->g = temp_g > 255 ? 255 : (uint8_t)temp_g;
-    dest->b = temp_b > 255 ? 255 : (uint8_t)temp_b;
-}
-
-void colorf_mix(ColorFloat *dest, const ColorFloat *source)
-{
-	float temp_r = dest->r + source->r;
-    float temp_g = dest->g + source->g;
-    float temp_b = dest->b + source->b;
-    
-    dest->r = temp_r > 255.f ? 255.f : (uint8_t)temp_r;
-    dest->g = temp_g > 255.f ? 255.f : (uint8_t)temp_g;
-    dest->b = temp_b > 255.f ? 255.f : (uint8_t)temp_b;
 }

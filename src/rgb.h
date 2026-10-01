@@ -158,10 +158,11 @@ typedef struct __RGBLocation
     int32_t y;
 }RGBLocation;
 
+/* A ripple in flight: which LED it started from and when. */
 typedef struct __RGBArgument
 {
     uint32_t begin_tick;
-    uint8_t rgb_ptr;
+    uint16_t rgb_ptr;
 }RGBArgument;
 
 typedef struct __RGBArgumentListNode
