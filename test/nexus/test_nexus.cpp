@@ -4,6 +4,7 @@
 #include <cstring>
 
 #include "keyboard.h"
+#include "layer.h"
 #include "nexus.h"
 #include "packet.h"
 
@@ -476,4 +477,82 @@ TEST(NexusEncode, RawEncoderSplitsTheFirstSampleAroundTheFlag)
     EXPECT_EQ(0xFF, frame[4]);
     EXPECT_EQ(0xFF, frame[5]);
     EXPECT_EQ(0, nexus_raw_report_encode(frame, raws, 0));
+}
+
+// --- What the per-tick key loop must keep doing -----------------------------
+// nexus_process() may skip slave keys that keyboard_key_update() could not
+// affect. These pin down the cases in which the update must still run even
+// though the slave's bit has not changed since the last tick.
+
+static_assert(DEBOUNCE_PRESS > 0 && DEBOUNCE_PRESS_EAGER && DEBOUNCE_RELEASE > 0 && !DEBOUNCE_RELEASE_EAGER,
+              "the debounce expectations below assume an eager press and a counted release");
+
+TEST(NexusReport, DebounceKeepsCountingBetweenFrames)
+{
+    reset_capture();
+    Key *key = &g_keyboard_advanced_keys[5].key;
+
+    deliver_report(0, 0, 0, 0b010);
+    nexus_process();
+    ASSERT_TRUE(key->report_state) << "an eager press reports at once";
+
+    // Released inside the press lockout: the report has to hold for the rest
+    // of the lockout plus the counted release debounce, advanced tick by tick
+    // although the slave sends nothing new.
+    deliver_report(0, 0, 0, 0b000);
+    for (int tick = 1; tick < DEBOUNCE_PRESS + DEBOUNCE_RELEASE; tick++)
+    {
+        g_keyboard_tick++;
+        nexus_process();
+        EXPECT_TRUE(key->report_state) << "tick " << tick;
+    }
+    g_keyboard_tick++;
+    nexus_process();
+    EXPECT_FALSE(key->report_state);
+}
+
+TEST(NexusReport, HeldMouseMoveKeyDispatchesEveryTick)
+{
+    reset_capture();
+    g_keymap[0][5] = KEY_A;
+    g_keymap[0][8] = KEYCODE(MOUSE_COLLECTION, MOUSE_MOVE_UP);
+    layer_cache_refresh();
+
+    deliver_report(0, 0, 0, 0b110);
+    for (int tick = 0; tick < 3; tick++)
+    {
+        g_keyboard_report_flags.mouse = false;
+        g_keyboard_report_flags.keyboard = false;
+        g_keyboard_tick++;
+        nexus_process();
+        EXPECT_TRUE((bool)g_keyboard_report_flags.mouse) << "tick " << tick << ": movement runs while held";
+        EXPECT_EQ(tick == 0, (bool)g_keyboard_report_flags.keyboard) << "tick " << tick << ": a plain key only reports its edge";
+    }
+}
+
+TEST(NexusReport, LayerSwitchedBySlaveKeyAppliesToKeysProcessedAfterIt)
+{
+    reset_capture();
+    g_keymap[0][2] = KEY_A;
+    g_keymap[0][5] = LAYER(LAYER_MOMENTARY, 1);
+    g_keymap[0][8] = KEY_A;
+    g_keymap[1][2] = KEYCODE(MOUSE_COLLECTION, MOUSE_MOVE_UP);
+    g_keymap[1][5] = KEY_TRANSPARENT;
+    g_keymap[1][8] = KEYCODE(MOUSE_COLLECTION, MOUSE_MOVE_UP);
+    layer_cache_refresh();
+
+    // Slave slot order is key 2, key 5, key 8. Pressing the layer key switches
+    // layers in the middle of the tick: key 8 is evaluated afterwards and
+    // already runs its mouse movement (which marks the key reported), key 2
+    // was evaluated before the switch and catches up on the next tick.
+    deliver_report(0, 0, 0, 0b010);
+    g_keyboard_tick++;
+    nexus_process();
+    ASSERT_EQ(1, layer_get());
+    EXPECT_TRUE(g_keyboard_advanced_keys[8].key.report_state);
+    EXPECT_FALSE(g_keyboard_advanced_keys[2].key.report_state);
+
+    g_keyboard_tick++;
+    nexus_process();
+    EXPECT_TRUE(g_keyboard_advanced_keys[2].key.report_state);
 }

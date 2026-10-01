@@ -277,31 +277,32 @@ static inline Key* keyboard_get_key(uint16_t id)
  * travel of the key (mouse movement, joystick and gamepad axes), which are
  * refreshed on every poll, and KEY_USER, whose handler is user code that may
  * act on held keys. Everything else is skipped when the state is unchanged. */
-static inline bool keyboard_event_needs_dispatch(KeyboardEvent event)
+static inline bool keyboard_keycode_dispatches_unchanged(Keycode keycode)
 {
-    if (EVENT_CHANGED(event.event))
-    {
-        return true;
-    }
-    switch (KEYCODE_GET_MAIN(event.keycode))
+    switch (KEYCODE_GET_MAIN(keycode))
     {
 #ifdef MOUSE_ENABLE
     case MOUSE_COLLECTION:
-        return MOUSE_KEYCODE_IS_MOVE(event.keycode);
+        return MOUSE_KEYCODE_IS_MOVE(keycode);
 #endif
 #ifdef JOYSTICK_ENABLE
     case JOYSTICK_COLLECTION:
-        return JOYSTICK_KEYCODE_IS_AXIS(event.keycode);
+        return JOYSTICK_KEYCODE_IS_AXIS(keycode);
 #endif
 #ifdef GAMEPAD_ENABLE
     case GAMEPAD_COLLECTION:
-        return GAMEPAD_KEYCODE_IS_AXIS(event.keycode);
+        return GAMEPAD_KEYCODE_IS_AXIS(keycode);
 #endif
     case KEY_USER:
         return true;
     default:
         return false;
     }
+}
+
+static inline bool keyboard_event_needs_dispatch(KeyboardEvent event)
+{
+    return EVENT_CHANGED(event.event) || keyboard_keycode_dispatches_unchanged(event.keycode);
 }
 
 static inline bool keyboard_key_set_report_state(Key*key, bool state)

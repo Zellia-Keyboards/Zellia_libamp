@@ -13,8 +13,19 @@
 #include "analog.h"
 #include "keyboard.h"
 #include "layer.h"
+#include "nexus.h"
 #include "rgb.h"
 #include "test_fixture.h"
+
+/* nexus.c is linked as a bitmap-mode master; give it one slave carrying the
+ * first sixteen keys so the master's per-tick key loop can be timed. */
+static_assert(NEXUS_SLICE_LENGTH_MAX >= 16, "the bench slave maps sixteen keys");
+extern "C" {
+const uint16_t bench_slave_map[16] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15};
+NexusSlaveKeymap g_nexus_slave_configs[NEXUS_SLAVE_NUM] = {
+    {16, bench_slave_map},
+};
+}
 
 namespace {
 
@@ -69,6 +80,39 @@ void tick_travel(void)
     keyboard_task();
 }
 
+uint32_t slave_bitmap;
+
+/* One report frame from slave 0, as its transport interrupt would deliver it. */
+void deliver_slave_frame(uint32_t bitmap)
+{
+    PacketNexus packet;
+    const volatile uint32_t bits[NEXUS_BITMAP_WORDS] = {bitmap};
+    nexus_report_encode(&packet, 0, 2048, 0, bits, 16);
+    nexus_process_buffer(0, reinterpret_cast<uint8_t *>(&packet), sizeof(packet));
+}
+
+/* Sixteen resting slave keys: the usual master load. The slave's frames are
+ * delivered only often enough to keep the link alive, so this times the
+ * master's per-tick key loop itself. */
+void nexus_tick_idle(void)
+{
+    if ((g_keyboard_tick & 63u) == 0u)
+    {
+        deliver_slave_frame(0);
+    }
+    g_keyboard_tick++;
+    nexus_process();
+}
+
+/* Every slave key changes state on every tick: the worst case for the loop. */
+void nexus_tick_toggle(void)
+{
+    slave_bitmap ^= 0xFFFFu;
+    deliver_slave_frame(slave_bitmap);
+    g_keyboard_tick++;
+    nexus_process();
+}
+
 void frame(void)
 {
     g_keyboard_tick++;
@@ -101,6 +145,10 @@ int main(int argc, char **argv)
 
     std::printf("keyboard_task, idle keys      : %8.1f ns/tick\n", ns_per_call(tick_idle, ticks));
     std::printf("keyboard_task, travelling keys: %8.1f ns/tick\n", ns_per_call(tick_travel, ticks));
+
+    nexus_init();
+    std::printf("nexus_process, 16 idle slave keys   : %8.1f ns/tick\n", ns_per_call(nexus_tick_idle, ticks));
+    std::printf("nexus_process, 16 toggling slave keys: %8.1f ns/tick\n", ns_per_call(nexus_tick_toggle, ticks));
 
     g_rgb_base_config.mode = RGB_BASE_MODE_RAINBOW;
     g_rgb_base_config.brightness = 200;

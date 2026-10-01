@@ -607,7 +607,10 @@ applies the slaves' reports and `keyboard_process()` pushes each slave's
 advanced-key configuration without blocking, both at start-up and whenever it
 changes or a slave reconnects. A slave that stops reporting for
 `NEXUS_LINK_TIMEOUT_MS` is treated as unplugged and its keys release.
-`nexus_slave_is_online()` exposes that state. With `NEXUS_USE_RAW 1` the
+`nexus_slave_is_online()` exposes that state. Applying a report only touches
+the keys whose state changed, whose debounce is still settling or whose
+keycode runs every tick (mouse movement, analog axes, `KEY_USER`), so idle
+slaves cost the master almost nothing per tick. With `NEXUS_USE_RAW 1` the
 slaves send raw samples instead and the master normalizes them; master keys
 that no slave maps are left to the application's `keyboard_scan()`.
 

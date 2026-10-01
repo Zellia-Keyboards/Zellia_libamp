@@ -7,6 +7,7 @@
 #include "packet.h"
 #include "driver.h"
 #include "analog.h"
+#include "layer.h"
 #include <stddef.h>
 #include <string.h>
 
@@ -305,6 +306,30 @@ void nexus_process_buffer(uint8_t slave_id, uint8_t *buf, uint16_t len)
  * Applying reports (keyboard tick)
  * -------------------------------------------------------------------------- */
 
+#if !NEXUS_USE_RAW
+/* keyboard_key_update() does nothing observable for a key whose state already
+ * matches the slave's bit, whose debounce has settled and whose keycode is not
+ * dispatched while unchanged (keyboard_keycode_dispatches_unchanged()). The
+ * tick skips those keys, so its cost follows what is happening on the slaves
+ * rather than how many keys they carry. The keycode is read here, at the
+ * key's turn, so a layer switched by an earlier key in the same tick is seen
+ * exactly as it would be inside keyboard_key_update(). */
+static inline bool nexus_key_update_has_effect(const Key *key, bool state)
+{
+    if (key->state != state || key->report_state != key->state)
+    {
+        return true;
+    }
+#if DEBOUNCE_PRESS > 0 || DEBOUNCE_RELEASE > 0
+    if (key->debounce != 0)
+    {
+        return true;
+    }
+#endif
+    return keyboard_keycode_dispatches_unchanged(layer_cache_get_keycode(key->id));
+}
+#endif
+
 void nexus_process(void)
 {
     const uint32_t tick = g_keyboard_tick;
@@ -344,9 +369,10 @@ void nexus_process(void)
         for (uint16_t j = 0; j < slave->length; j++)
         {
             Key *key = slave->keys[j];
-            if (key != NULL)
+            const bool state = (bitmap[j / 32] >> (j % 32)) & 1U;
+            if (key != NULL && nexus_key_update_has_effect(key, state))
             {
-                keyboard_key_update(key, (bitmap[j / 32] >> (j % 32)) & 1U);
+                keyboard_key_update(key, state);
             }
         }
     }
