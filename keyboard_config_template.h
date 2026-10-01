@@ -159,6 +159,7 @@
 // #define RGB_FLASH_RIPPLE_SPEED 500      /* Flash-ripple propagation speed. */
 // #define RGB_DEFAULT_MODE RGB_MODE_LINEAR /* Initial RGB effect mode. */
 // #define RGB_DEFAULT_SPEED 20            /* Initial RGB effect speed. */
+// #define RGB_MAX_FRAME_RATE 1000         /* Cap on rendered frames per second; default: one per tick. */
 // #define RGB_DEFAULT_COLOR_HSV {273, 78, 99} /* Initial RGB HSV color. */
 // #define RGB_LEFT 0.0f                   /* RGB layout left boundary. */
 // #define RGB_TOP -0.5f                   /* RGB layout top boundary. */

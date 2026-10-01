@@ -110,3 +110,81 @@ TEST(RGB, HidModeOnlyFlushesExistingHostLedState)
     EXPECT_EQ(9, led_color_buffer[0].b);
     EXPECT_EQ(1U, led_flush_count);
 }
+
+TEST(RGB, RendersOneFrameUntilTheTickAdvances)
+{
+    libamp_test_clear_output_buffers();
+    g_rgb_base_config.mode = RGB_BASE_MODE_BLANK;
+    for (uint16_t i = 0; i < RGB_NUM; i++) {
+        g_rgb_configs[i].mode = RGB_MODE_FIXED;
+        g_rgb_configs[i].rgb = {0, 0, 0};
+    }
+
+    rgb_process();
+    rgb_process();
+    EXPECT_EQ(1U, led_flush_count) << "a second call in the same tick renders nothing";
+
+    g_keyboard_tick++;
+    rgb_process();
+    EXPECT_EQ(2U, led_flush_count);
+}
+
+TEST(RGB, TriggerFadeEndsExactlyWhereTheColorTruncatesToBlack)
+{
+    libamp_test_clear_output_buffers();
+    g_rgb_base_config.mode = RGB_BASE_MODE_BLANK;
+    g_rgb_base_config.brightness = 255;
+    for (uint16_t i = 0; i < RGB_NUM; i++) {
+        g_rgb_configs[i].mode = RGB_MODE_FIXED;
+        g_rgb_configs[i].rgb = {0, 0, 0};
+    }
+    g_rgb_configs[0].mode = RGB_MODE_TRIGGER;
+    g_rgb_configs[0].rgb = {255, 255, 255};
+    g_rgb_configs[0].speed = 20;
+    Key *key = keyboard_get_key(g_rgb_mapping[0]);
+    ASSERT_NE(nullptr, key);
+
+    // The renderer fades by 0.9999 per (millisecond * speed) since the trigger.
+    auto faded = [](uint32_t ticks) {
+        const float span = (float)KEYBOARD_TICK_TO_TIME(ticks) * 20.0f;
+        return (uint8_t)(std::exp(span * -1.0000500033e-4f) * 255.0f);
+    };
+    static_assert(KEYBOARD_TICK_TO_TIME(2750) * 20 == 55000, "the boundary ticks below assume a 1 kHz tick");
+
+    g_keyboard_tick = 1000;
+    key->report_state = 1;
+    rgb_process();
+    key->report_state = 0;
+    EXPECT_EQ(255, g_rgb_colors[0].r);
+
+    g_keyboard_tick = 1000 + 500;
+    rgb_process();
+    EXPECT_EQ(faded(500), g_rgb_colors[0].r);
+    EXPECT_NEAR(94, g_rgb_colors[0].r, 1);
+
+    g_keyboard_tick = 1000 + 2750;   /* exponent -5.50: 255 * 0.00408 is still one count */
+    rgb_process();
+    EXPECT_EQ(1, g_rgb_colors[0].r);
+    EXPECT_EQ(1, g_rgb_colors[0].b);
+
+    g_keyboard_tick = 1000 + 2850;   /* exponent -5.70: truncates to black */
+    rgb_process();
+    EXPECT_EQ(0, g_rgb_colors[0].r);
+
+    g_keyboard_tick = 1000 + 100000;
+    rgb_process();
+    EXPECT_EQ(0, g_rgb_colors[0].r);
+    EXPECT_EQ(0, g_rgb_colors[0].g);
+}
+
+TEST(RGB, FrameDueCheckHonoursTheIntervalAcrossTickWrap)
+{
+    static_assert(RGB_FRAME_INTERVAL_TICKS == 1, "the test configuration keeps one frame per tick");
+
+    EXPECT_FALSE(rgb_frame_is_due(5, 5, 1));
+    EXPECT_TRUE(rgb_frame_is_due(6, 5, 1));
+    EXPECT_FALSE(rgb_frame_is_due(107, 100, 8));
+    EXPECT_TRUE(rgb_frame_is_due(108, 100, 8));
+    EXPECT_FALSE(rgb_frame_is_due(5, 0xFFFFFFFEu, 8)) << "seven ticks across the wrap";
+    EXPECT_TRUE(rgb_frame_is_due(6, 0xFFFFFFFEu, 8)) << "eight ticks across the wrap";
+}

@@ -156,6 +156,7 @@
 // #define RGB_FLASH_RIPPLE_SPEED 500      /* Flash Ripple 传播速度。 */
 // #define RGB_DEFAULT_MODE RGB_MODE_LINEAR /* 初始 RGB 效果模式。 */
 // #define RGB_DEFAULT_SPEED 20            /* 初始 RGB 效果速度。 */
+// #define RGB_MAX_FRAME_RATE 1000         /* 渲染帧率上限；默认每个 tick 一帧。 */
 // #define RGB_DEFAULT_COLOR_HSV {273, 78, 99} /* 初始 RGB HSV 颜色。 */
 // #define RGB_LEFT 0.0f                   /* RGB 布局左边界。 */
 // #define RGB_TOP -0.5f                   /* RGB 布局上边界。 */

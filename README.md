@@ -299,7 +299,9 @@ timer/RTOS schedule or from a deadline-driven bare-metal loop, at exactly
 Run `keyboard_process()` continuously outside the time-critical sampling path.
 It handles queued events, protocol work, and optional runtime processing.
 Calling it more often than the keyboard tick costs little: the RGB renderer
-produces at most one frame per tick and returns immediately otherwise.
+produces at most one frame per tick and returns immediately otherwise. Boards
+that tick at several kHz can set `RGB_MAX_FRAME_RATE` to space frames further
+apart; effects are timed by the tick, so they look the same at any frame rate.
 
 ```c
 int main(void)

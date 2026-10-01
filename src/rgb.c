@@ -29,6 +29,11 @@ _Static_assert((UINT64_C(1) << 32) % HUE_CYCLE_MILLIDEGREES == HUE_CYCLE_FOLD_2P
 /* Trigger mode fades by 0.9999 per unit of span; expf(x * ln 0.9999) is the
  * same curve as powf(0.9999, x) without the general-purpose pow overhead. */
 #define RGB_TRIGGER_DECAY_LN (-1.0000500033e-4f)
+/* Once the exponent is below this, expf() returns under 0.0037 and
+ * rgb_scale() truncates every channel to zero (255 * 0.0037 < 1), so mixing
+ * the color in changes nothing and the key is skipped without calling expf().
+ * ln(1/255) is -5.54; -5.6 keeps a margin for rounding. */
+#define RGB_TRIGGER_DECAY_SILENT (-5.6f)
 
 #ifndef RGB_CUSTOM_INVERSE_MAPPING
 uint16_t g_rgb_inverse_mapping[TOTAL_KEY_NUM];
@@ -49,8 +54,8 @@ static RGBArgumentListNode rgb_argument_list_buffer[RGB_ARGUMENT_LIST_BUFFER_LEN
 
 /* Frame pacing: every input of the renderer (tick, key state, effect start
  * times) changes in keyboard_task(), so one frame per tick is the most that
- * can ever reach the LEDs. keyboard_process() may call rgb_process() far more
- * often than that. */
+ * can ever reach the LEDs, and RGB_MAX_FRAME_RATE may space frames further
+ * apart. keyboard_process() may call rgb_process() far more often than that. */
 static uint32_t rgb_frame_tick;
 static bool rgb_frame_rendered;
 
@@ -406,8 +411,12 @@ static void rgb_render_keys(void)
             {
                 config->begin_tick = g_keyboard_tick;
             }
-            const float decay = expf(CALC_SPAN(g_keyboard_tick - config->begin_tick, config->speed) * RGB_TRIGGER_DECAY_LN);
-            temp_rgb = rgb_scale(&config->rgb, decay);
+            const float exponent = CALC_SPAN(g_keyboard_tick - config->begin_tick, config->speed) * RGB_TRIGGER_DECAY_LN;
+            if (exponent < RGB_TRIGGER_DECAY_SILENT)
+            {
+                break;  /* faded to black: nothing to mix in */
+            }
+            temp_rgb = rgb_scale(&config->rgb, expf(exponent));
             color_mix(target_color, &temp_rgb);
             break;
         }
@@ -453,11 +462,12 @@ static void rgb_render_keys(void)
 
 void rgb_process(void)
 {
-    if (rgb_frame_rendered && g_keyboard_tick == rgb_frame_tick)
+    const uint32_t tick = g_keyboard_tick;
+    if (rgb_frame_rendered && !rgb_frame_is_due(tick, rgb_frame_tick, RGB_FRAME_INTERVAL_TICKS))
     {
         return;
     }
-    rgb_frame_tick = g_keyboard_tick;
+    rgb_frame_tick = tick;
     rgb_frame_rendered = true;
 
     if (!g_rgb_base_config.mode
