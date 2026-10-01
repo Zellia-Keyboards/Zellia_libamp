@@ -7,6 +7,13 @@
 #include "keyboard_def.h"
 #include "analog.h"
 
+_Static_assert(LUT_LENGTH > 0 && LUT_LENGTH <= 65535, "LUT_LENGTH must fit the AnalogValue range");
+
+#ifdef CALIBRATION_LPF_ENABLE
+static AnalogRawValue calibration_low_pass_raws[ADVANCED_KEY_NUM];
+#endif
+
+
 static inline bool advanced_key_update_digital_mode(AdvancedKey* advanced_key)
 {
     return (bool)advanced_key->value;
@@ -121,6 +128,7 @@ bool advanced_key_update(AdvancedKey* advanced_key, AnalogValue value)
             break;
         case ADVANCED_KEY_ANALOG_SPEED_MODE:
             state = advanced_key_update_analog_speed_mode(advanced_key);
+            break;
         default:
             break;
     }
@@ -142,14 +150,17 @@ bool advanced_key_update_raw(AdvancedKey* advanced_key, AnalogRawValue raw)
     filtered_raw = hysteresis_filter(&g_analog_hysteresis_filters[advanced_key->key.id], filtered_raw, FILTER_HYSTERESIS);
 #endif
 #ifdef CALIBRATION_LPF_ENABLE
-    static AnalogRawValue low_pass_raws[ADVANCED_KEY_NUM];
-    low_pass_raws[advanced_key->key.id] = 
-        ((uint32_t)filtered_raw + ((uint32_t)low_pass_raws[advanced_key->key.id]<<4) - low_pass_raws[advanced_key->key.id]) >> 4; 
-    AnalogRawValue lpf_value = low_pass_raws[advanced_key->key.id];
+    /* First-order low-pass (alpha = 1/16) so a single noisy sample cannot
+     * widen the calibrated range. */
+    AnalogRawValue *low_pass_raw = &calibration_low_pass_raws[advanced_key->key.id];
+    *low_pass_raw = (AnalogRawValue)(((uint32_t)filtered_raw + ((uint32_t)*low_pass_raw << 4) - *low_pass_raw) >> 4);
+    const AnalogRawValue lpf_value = *low_pass_raw;
 #else
-    AnalogRawValue lpf_value = filtered_raw;
+    const AnalogRawValue lpf_value = filtered_raw;
 #endif
     advanced_key->filtered_raw = filtered_raw;
+    /* Auto-calibration: the upper bound is the resting sample; the lower bound
+     * follows the farthest sample seen in the detected direction of travel. */
     switch (advanced_key->config.calibration_mode)
     {
     case ADVANCED_KEY_AUTO_CALIBRATION_POSITIVE:
@@ -186,32 +197,42 @@ bool advanced_key_update_state(AdvancedKey* advanced_key, bool state)
     return key_update(&(advanced_key->key), state);
 }
 
+int32_t advanced_key_lut_index(const AdvancedKey* advanced_key, AnalogRawValue value)
+{
+    const int32_t delta = (int32_t)advanced_key->config.upper_bound - (int32_t)value;
+    /* 64-bit product: delta * q_scale_to_index reaches LUT_LENGTH << 16, which
+     * overflows int32 for LUT_LENGTH > 32767 (the default is ANALOG_VALUE_MAX). */
+    int32_t index = (int32_t)(((int64_t)delta * advanced_key->q_scale_to_index) >> 16);
+    if (index < 0)
+    {
+        return 0;
+    }
+    if (index > LUT_LENGTH)
+    {
+        return LUT_LENGTH;
+    }
+    return index;
+}
+
+/* Linear transfer function: map the calibrated raw range onto the full
+ * normalized range. The lookup-table index is rescaled so the result does not
+ * depend on LUT_LENGTH; for a power-of-two LUT_LENGTH this is a multiply and a
+ * shift, and when LUT_LENGTH equals ANALOG_VALUE_RANGE it folds away entirely. */
 __WEAK AnalogValue advanced_key_normalize(AdvancedKey* advanced_key, AnalogRawValue value)
 {
-    int32_t delta = (int32_t)advanced_key->config.upper_bound - (int32_t)value;
-    int32_t mapped_val = (delta * advanced_key->q_scale_to_index) >> 16;
-    mapped_val += ANALOG_VALUE_MIN;
-    if (mapped_val < ANALOG_VALUE_MIN)
-    {
-        return ANALOG_VALUE_MIN;
-    }
-    if (mapped_val > ANALOG_VALUE_MAX)
-    {
-        return ANALOG_VALUE_MAX;
-    }
-    return (AnalogValue)mapped_val;
+    const uint32_t index = (uint32_t)advanced_key_lut_index(advanced_key, value);
+    return (AnalogValue)(index * (uint32_t)ANALOG_VALUE_RANGE / (uint32_t)LUT_LENGTH) + ANALOG_VALUE_MIN;
 }
 
 void advanced_key_set_range(AdvancedKey* advanced_key, AnalogRawValue upper, AnalogRawValue lower)
 {
     advanced_key->config.upper_bound = upper;
     advanced_key->config.lower_bound = lower;
-    int32_t range = upper - lower;
-    if (range != 0) {
-        advanced_key->q_scale_to_index = (int32_t)(((int64_t)LUT_LENGTH << 16) / range);
-    } else {
-        advanced_key->q_scale_to_index = 0;
-    }
+    const int32_t range = (int32_t)upper - (int32_t)lower;
+    /* Q16 factor that turns a raw delta into a lookup-table index; only
+     * recomputed when the calibrated range moves, so the division is off the
+     * per-tick path. */
+    advanced_key->q_scale_to_index = range != 0 ? (int32_t)(((int64_t)LUT_LENGTH << 16) / range) : 0;
 }
 
 void advanced_key_reset_range(AdvancedKey* advanced_key, AnalogRawValue value)
@@ -241,25 +262,27 @@ __WEAK AnalogRawValue advanced_key_read_raw(AdvancedKey *advanced_key)
     return ringbuf_avg(&g_adc_ringbufs[g_analog_map[advanced_key->key.id]]);
 }
 
+/* Travel with the dead zones removed, stretched back over the full range. */
 AnalogValue advanced_key_get_effective_value(AdvancedKey *advanced_key)
 {
-    int32_t raw_val = (int32_t)advanced_key->value - (int32_t)ANALOG_VALUE_MIN;
-    if (raw_val <= (int32_t)advanced_key->config.upper_deadzone)
+    const int32_t travel = (int32_t)advanced_key->value - (int32_t)ANALOG_VALUE_MIN;
+    const int32_t upper_deadzone = advanced_key->config.upper_deadzone;
+    const int32_t lower_deadzone = advanced_key->config.lower_deadzone;
+    if (travel <= upper_deadzone)
     {
         return ANALOG_VALUE_MIN;
     }
-    if (raw_val >= (int32_t)ANALOG_VALUE_RANGE - (int32_t)advanced_key->config.lower_deadzone)
+    if (travel >= (int32_t)ANALOG_VALUE_RANGE - lower_deadzone)
     {
         return ANALOG_VALUE_MAX;
     }
-    int32_t active_val = raw_val - (int32_t)advanced_key->config.upper_deadzone;
-    int32_t active_range = (int32_t)ANALOG_VALUE_RANGE - (int32_t)advanced_key->config.upper_deadzone - (int32_t)advanced_key->config.lower_deadzone;
-
-    if (active_range <= 0) {
+    const int32_t active_range = (int32_t)ANALOG_VALUE_RANGE - upper_deadzone - lower_deadzone;
+    if (active_range <= 0)
+    {
         return ANALOG_VALUE_MAX;
     }
-
-    uint64_t mapped_val = ((uint64_t)active_val * (uint64_t)ANALOG_VALUE_RANGE) / (uint32_t)active_range;
-
-    return (AnalogValue)mapped_val + ANALOG_VALUE_MIN;
+    /* Both factors are below 2^16, so the product fits in 32 bits and the
+     * division is a single hardware instruction instead of a 64-bit routine. */
+    const uint32_t active_travel = (uint32_t)(travel - upper_deadzone);
+    return (AnalogValue)(active_travel * (uint32_t)ANALOG_VALUE_RANGE / (uint32_t)active_range) + ANALOG_VALUE_MIN;
 }

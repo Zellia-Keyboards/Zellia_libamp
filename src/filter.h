@@ -130,10 +130,12 @@ static inline FilterValue kalman_filter(KalmanFilter *filter, FilterValue value)
     // S = H * P_pred * H^T + R
     FilterValue S = p00_pred + filter->R;
     
-    // K = P_pred * H^T * inv(S). 
-    // K = [p00_pred / S, p10_pred / S]^T
-    FilterValue K_pos = p00_pred / S;
-    FilterValue K_vel = p10_pred / S;
+    // K = P_pred * H^T * inv(S) = [p00_pred / S, p10_pred / S]^T
+    // One division shared by both gains: float division is the slowest FPU
+    // operation on Cortex-M and this runs once per key per tick.
+    FilterValue inv_S = 1.0f / S;
+    FilterValue K_pos = p00_pred * inv_S;
+    FilterValue K_vel = p10_pred * inv_S;
 
     // x = x_pred + K * (z - H * x_pred)
     FilterValue y = value - pos_pred;

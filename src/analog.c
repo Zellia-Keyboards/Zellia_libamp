@@ -67,18 +67,21 @@ void analog_calibrate(void)
 
 void ringbuf_push(RingBuffer* ringbuf, AnalogRawValue data)
 {
-    ringbuf->pointer++;
-    if (ringbuf->pointer >= RING_BUF_LEN)
+    uint16_t pointer = ringbuf->pointer + 1;
+    if (pointer >= RING_BUF_LEN)
     {
-        ringbuf->pointer = 0;
+        pointer = 0;
     }
+    ringbuf->pointer = pointer;
 #ifdef OPTIMIZE_MOVING_AVERAGE_FOR_RINGBUF
+    /* The running sum is replaced in one store, so a reader that interrupts
+     * this push sees either the old or the new window sum. The dirty flag
+     * still marks the update for readers that check it. */
     ringbuf->dirty = true;
-    ringbuf->sum -= ringbuf->datas[ringbuf->pointer];
-    ringbuf->sum += data;
+    ringbuf->sum = ringbuf->sum - ringbuf->datas[pointer] + data;
     ringbuf->dirty = false;
 #endif
-    ringbuf->datas[ringbuf->pointer] = data;
+    ringbuf->datas[pointer] = data;
 }
 
 AnalogRawValue ringbuf_avg(RingBuffer* ringbuf)
@@ -86,13 +89,13 @@ AnalogRawValue ringbuf_avg(RingBuffer* ringbuf)
 #ifdef OPTIMIZE_MOVING_AVERAGE_FOR_RINGBUF
     if (!ringbuf->dirty)
     {
-        return (AnalogValue)(ringbuf->sum/RING_BUF_LEN);
+        return (AnalogRawValue)(ringbuf->sum / RING_BUF_LEN);
     }
 #endif
-    uint32_t avg = 0;
+    uint32_t sum = 0;
     for (int i = 0; i < RING_BUF_LEN; i++)
     {
-        avg += ringbuf->datas[i];
+        sum += ringbuf->datas[i];
     }
-    return (AnalogValue)(avg/RING_BUF_LEN);
+    return (AnalogRawValue)(sum / RING_BUF_LEN);
 }

@@ -87,6 +87,13 @@ void advanced_key_init(AdvancedKey *advanced_key, uint16_t id);
 bool advanced_key_update(AdvancedKey *advanced_key, AnalogValue value);
 bool advanced_key_update_raw(AdvancedKey *advanced_key, AnalogValue value);
 bool advanced_key_update_state(AdvancedKey *advanced_key, bool state);
+/* Lookup-table index for a raw sample: 0 at the calibrated upper bound,
+ * LUT_LENGTH at the lower bound, clamped. Overrides of advanced_key_normalize()
+ * that use a table should index it with this. */
+int32_t advanced_key_lut_index(const AdvancedKey *advanced_key, AnalogRawValue value);
+/* Weak: convert a raw sample to the normalized ANALOG_VALUE_MIN..MAX range.
+ * The default is linear between the calibrated bounds; override it for a
+ * non-linear sensor response (see tools/lut_generator). */
 AnalogValue advanced_key_normalize(AdvancedKey *advanced_key, AnalogRawValue value);
 void advanced_key_set_range(AdvancedKey *advanced_key, AnalogRawValue upper, AnalogRawValue lower);
 void advanced_key_reset_range(AdvancedKey* advanced_key, AnalogRawValue value);

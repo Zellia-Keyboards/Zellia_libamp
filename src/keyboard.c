@@ -118,12 +118,12 @@ static void keyboard_6kro_report_clear(Keyboard6KROReport* buf)
 
 static int keyboard_nkro_report_add(KeyboardNKROReport*buf,Keycode keycode)
 {
-    if (KEYCODE_GET_MAIN(keycode) > NKRO_REPORT_BITS*8 )
+    const uint8_t key = KEYCODE_GET_MAIN(keycode);
+    if (key >= NKRO_REPORT_BITS * 8)
     {
         return 1;
     }
-    uint8_t index = KEYCODE_GET_MAIN(keycode)/8;
-    buf->buffer[index] |= (1 << (KEYCODE_GET_MAIN(keycode)%8));
+    buf->buffer[key / 8] |= (uint8_t)(1U << (key % 8));
     buf->modifier |= KEYCODE_GET_SUB(keycode);
     return 0;
 }
