@@ -418,9 +418,8 @@ static void keyboard_operation_event_handler_(KeyboardEvent event)
         {
 #if defined(NEXUS_ENABLE) && !NEXUS_IS_SLAVE
             nexus_calibrate();
-#else
-            target_calibration_tick = g_keyboard_tick + KEYBOARD_TIME_TO_TICK(CALIBRATION_DELAY);
 #endif
+            target_calibration_tick = g_keyboard_tick + KEYBOARD_TIME_TO_TICK(CALIBRATION_DELAY);
         }
         break;
     case KEYBOARD_EVENT_KEY_DOWN:
@@ -935,6 +934,9 @@ void keyboard_process(void)
     }
 #ifdef RGB_ENABLE
     rgb_process();
+#endif
+#if defined(NEXUS_ENABLE) && !NEXUS_IS_SLAVE
+    nexus_poll();
 #endif
 #ifdef CONSOLE_ENABLE
     console_flush();

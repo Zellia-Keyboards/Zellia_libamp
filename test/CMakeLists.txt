@@ -71,3 +71,41 @@ target_link_libraries(libamp_bench
     PRIVATE
     libamp
 )
+
+# nexus.c is built into libamp as a bitmap-mode master. The two variants below
+# compile their own copy of nexus.c with the raw-sample and slave
+# configurations; their definitions satisfy the linker before the archive's
+# copy is considered.
+add_executable(libamp_nexus_raw_tests
+    test_common/keyboard_user.c
+    test_common/test_fixture.cpp
+    nexus/test_nexus_raw.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/nexus.c
+)
+
+target_compile_definitions(libamp_nexus_raw_tests PRIVATE NEXUS_USE_RAW=1)
+
+target_link_libraries(libamp_nexus_raw_tests
+    PRIVATE
+    libamp
+    GTest::gtest_main
+)
+
+gtest_discover_tests(libamp_nexus_raw_tests)
+
+add_executable(libamp_nexus_slave_tests
+    test_common/keyboard_user.c
+    test_common/test_fixture.cpp
+    nexus/test_nexus_slave.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/nexus.c
+)
+
+target_compile_definitions(libamp_nexus_slave_tests PRIVATE NEXUS_IS_SLAVE=1)
+
+target_link_libraries(libamp_nexus_slave_tests
+    PRIVATE
+    libamp
+    GTest::gtest_main
+)
+
+gtest_discover_tests(libamp_nexus_slave_tests)

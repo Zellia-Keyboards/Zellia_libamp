@@ -1,11 +1,13 @@
 #include <gtest/gtest.h>
 
+#include <cstddef>
 #include <cstring>
 
-extern "C" {
+#include "keyboard.h"
 #include "nexus.h"
 #include "packet.h"
-}
+
+// These tests build nexus.c as a master in bitmap mode (the library default).
 
 extern "C" {
 const uint16_t g_nexus_test_slave_map[] = {2, 5, 8};
@@ -15,6 +17,9 @@ NexusSlaveKeymap g_nexus_slave_configs[NEXUS_SLAVE_NUM] = {
 }
 
 namespace {
+
+constexpr uint32_t kLinkTimeoutTicks = KEYBOARD_TIME_TO_TICK(NEXUS_LINK_TIMEOUT_MS);
+constexpr uint32_t kRequestTimeoutTicks = KEYBOARD_TIME_TO_TICK(NEXUS_REQUEST_TIMEOUT_MS);
 
 struct CapturedNexusPacket {
     uint8_t slave_id;
@@ -26,6 +31,8 @@ size_t captured_packet_count;
 bool captured_decode_ok;
 bool synthesize_version_response;
 bool corrupt_response_id;
+bool drop_echo;
+bool fail_send;
 
 void reset_capture()
 {
@@ -35,7 +42,10 @@ void reset_capture()
     captured_decode_ok = true;
     synthesize_version_response = false;
     corrupt_response_id = false;
+    drop_echo = false;
+    fail_send = false;
     g_keyboard_tick = 0;
+    nexus_init();
 }
 
 void set_test_config(uint16_t key_index)
@@ -51,11 +61,36 @@ void set_test_config(uint16_t key_index)
     config->lower_deadzone = 200;
 }
 
+// Deliver a report frame from slave 0 as its transport would.
+void deliver_report(uint16_t index, AnalogRawValue raw, AnalogValue value, uint32_t bitmap)
+{
+    PacketNexus packet;
+    const volatile uint32_t bits[NEXUS_BITMAP_WORDS] = {bitmap};
+    nexus_report_encode(&packet, index, raw, value, bits, 3);
+    nexus_process_buffer(0, reinterpret_cast<uint8_t *>(&packet), sizeof(packet));
+}
+
+// Bring slave 0 online and let nexus_poll() push its initial configuration.
+void bring_slave_online_and_drain()
+{
+    deliver_report(0, 0, 0, 0);
+    for (int i = 0; i < 16; i++)
+    {
+        nexus_poll();
+    }
+    captured_packet_count = 0;
+}
+
 } // namespace
 
+// The transport stub: capture what the master sends, then behave like a slave
+// that processes the packet and echoes it back through nexus_process_buffer().
 extern "C" int nexus_send(uint8_t slave_id, uint8_t *report, uint16_t len)
 {
-    // v2 协议：板间直接传输原始 packet（code(0) id(1) type(2) body(3...)）
+    if (fail_send)
+    {
+        return 1;
+    }
     if (report == NULL || len == 0 || len > NEXUS_RX_BUFFER_SIZE)
     {
         captured_decode_ok = false;
@@ -71,12 +106,16 @@ extern "C" int nexus_send(uint8_t slave_id, uint8_t *report, uint16_t len)
         std::memcpy(&captured->packet, report, capture_len);
     }
 
-    // 模拟从机回显：把请求（含事务 id）写回响应缓冲
-    std::memset(g_nexus_slave_buffer[slave_id], 0, NEXUS_BUFFER_SIZE);
-    std::memcpy(g_nexus_slave_buffer[slave_id], report, len);
+    if (drop_echo || report[0] == PACKET_CODE_EVENT)
+    {
+        return 0;
+    }
+
+    uint8_t echo[NEXUS_RX_BUFFER_SIZE] = {0};
+    std::memcpy(echo, report, len);
     if (synthesize_version_response && report[2] == PACKET_DATA_VERSION)
     {
-        PacketVersion *version = reinterpret_cast<PacketVersion *>(g_nexus_slave_buffer[slave_id]);
+        PacketVersion *version = reinterpret_cast<PacketVersion *>(echo);
         version->info_length = 4;
         version->major = 1;
         version->minor = 2;
@@ -85,9 +124,10 @@ extern "C" int nexus_send(uint8_t slave_id, uint8_t *report, uint16_t len)
     }
     if (corrupt_response_id)
     {
-        g_nexus_slave_buffer[slave_id][1]++;
+        echo[1]++;
         g_keyboard_tick = g_keyboard_tick + 2;
     }
+    nexus_process_buffer(slave_id, echo, len);
     return 0;
 }
 
@@ -120,6 +160,25 @@ TEST(NexusRequest, RejectsResponseWithWrongId)
 
     EXPECT_EQ(1, nexus_request_timeout(0, request, sizeof(request), 2,
                                        response, sizeof(response)));
+}
+
+TEST(NexusRequest, IgnoresStaleEchoLeftInBuffer)
+{
+    reset_capture();
+    // An echo from a previous request is still sitting in the buffer.
+    uint8_t stale[NEXUS_RX_BUFFER_SIZE] = {PACKET_CODE_GET, 77, PACKET_DATA_CONFIG};
+    nexus_process_buffer(0, stale, sizeof(stale));
+
+    uint8_t request[64] = {0};
+    uint8_t response[64] = {0};
+    request[0] = PACKET_CODE_GET;
+    request[2] = PACKET_DATA_CONFIG;
+    request[10] = 0x3C;
+
+    ASSERT_EQ(0, nexus_request_timeout(0, request, sizeof(request), 1,
+                                       response, sizeof(response)));
+    EXPECT_NE(77, response[1]);
+    EXPECT_EQ(0x3C, response[10]);
 }
 
 TEST(NexusRequest, CopiesVersionResponse)
@@ -157,18 +216,62 @@ TEST(NexusRequest, EventDoesNotConsumeTransactionIdField)
     EXPECT_EQ(PACKET_EVENT_CONFIG_CHANGED, captured_packets[0].packet.header.id);
 }
 
-TEST(NexusConfigSync, SendsMappedKeyUsingSlaveLocalIndex)
+TEST(NexusRequest, GivesUpWhenTransportKeepsFailingEvenWithoutTick)
 {
     reset_capture();
-    set_test_config(5);
+    fail_send = true;
+    uint8_t request[64] = {0};
+    request[0] = PACKET_CODE_GET;
+    request[2] = PACKET_DATA_CONFIG;
 
-    EXPECT_EQ(0, nexus_sync_advanced_key_config(5));
+    // The tick never advances here, so only the retry limit can end the call.
+    EXPECT_EQ(1, nexus_request_timeout(0, request, sizeof(request), 1000, NULL, 0));
+}
+
+TEST(NexusConfigSync, InitDoesNotBlockAndWaitsForTheSlave)
+{
+    reset_capture();
+    set_test_config(2);
+    set_test_config(5);
+    set_test_config(8);
+
+    EXPECT_EQ(0u, captured_packet_count);
+    nexus_poll();
+    EXPECT_EQ(0u, captured_packet_count) << "nothing is sent while the slave is silent";
+    EXPECT_FALSE(nexus_slave_is_online(0));
+
+    deliver_report(0, 0, 0, 0);
+    EXPECT_TRUE(nexus_slave_is_online(0));
+    for (int i = 0; i < 8; i++)
+    {
+        nexus_poll();
+    }
 
     ASSERT_TRUE(captured_decode_ok);
-    ASSERT_EQ(1u, captured_packet_count);
+    ASSERT_EQ(3u, captured_packet_count);
     EXPECT_EQ(0u, captured_packets[0].slave_id);
     EXPECT_EQ(PACKET_CODE_SET, captured_packets[0].packet.header.code);
     EXPECT_EQ(PACKET_DATA_ADVANCED_KEY, captured_packets[0].packet.header.type);
+    EXPECT_EQ(0u, captured_packets[0].packet.index);
+    EXPECT_EQ(1u, captured_packets[1].packet.index);
+    EXPECT_EQ(2u, captured_packets[2].packet.index);
+    EXPECT_EQ(g_keyboard_advanced_keys[2].config.activation_value, captured_packets[0].packet.data.activation_value);
+    EXPECT_EQ(g_keyboard_advanced_keys[5].config.activation_value, captured_packets[1].packet.data.activation_value);
+    EXPECT_EQ(g_keyboard_advanced_keys[8].config.activation_value, captured_packets[2].packet.data.activation_value);
+    EXPECT_NE(captured_packets[0].packet.header.id, captured_packets[1].packet.header.id);
+}
+
+TEST(NexusConfigSync, SyncSendsMappedKeyUsingSlaveLocalIndex)
+{
+    reset_capture();
+    bring_slave_online_and_drain();
+    set_test_config(5);
+
+    EXPECT_EQ(0, nexus_sync_advanced_key_config(5));
+    nexus_poll();
+
+    ASSERT_TRUE(captured_decode_ok);
+    ASSERT_EQ(1u, captured_packet_count);
     EXPECT_EQ(1u, captured_packets[0].packet.index);
     EXPECT_EQ(g_keyboard_advanced_keys[5].config.mode, captured_packets[0].packet.data.mode);
     EXPECT_EQ(g_keyboard_advanced_keys[5].config.activation_value, captured_packets[0].packet.data.activation_value);
@@ -178,28 +281,199 @@ TEST(NexusConfigSync, SendsMappedKeyUsingSlaveLocalIndex)
 TEST(NexusConfigSync, SkipsKeysNotMappedToSlaves)
 {
     reset_capture();
+    bring_slave_online_and_drain();
 
     EXPECT_EQ(0, nexus_sync_advanced_key_config(4));
+    EXPECT_EQ(1, nexus_sync_advanced_key_config(ADVANCED_KEY_NUM));
+    nexus_poll();
 
-    ASSERT_TRUE(captured_decode_ok);
     EXPECT_EQ(0u, captured_packet_count);
 }
 
-TEST(NexusConfigSync, InitSendsAllSlaveLocalConfigs)
+TEST(NexusConfigSync, ResendsWhenTheEchoIsLost)
 {
     reset_capture();
-    set_test_config(2);
-    set_test_config(5);
-    set_test_config(8);
+    bring_slave_online_and_drain();
+    drop_echo = true;
 
-    nexus_init();
+    nexus_sync_advanced_key_config(8);
+    nexus_poll();
+    ASSERT_EQ(1u, captured_packet_count);
+    nexus_poll();
+    EXPECT_EQ(1u, captured_packet_count) << "one request in flight at a time";
 
-    ASSERT_TRUE(captured_decode_ok);
-    ASSERT_EQ(3u, captured_packet_count);
-    EXPECT_EQ(0u, captured_packets[0].packet.index);
-    EXPECT_EQ(1u, captured_packets[1].packet.index);
-    EXPECT_EQ(2u, captured_packets[2].packet.index);
-    EXPECT_EQ(g_keyboard_advanced_keys[2].config.activation_value, captured_packets[0].packet.data.activation_value);
-    EXPECT_EQ(g_keyboard_advanced_keys[5].config.activation_value, captured_packets[1].packet.data.activation_value);
-    EXPECT_EQ(g_keyboard_advanced_keys[8].config.activation_value, captured_packets[2].packet.data.activation_value);
+    g_keyboard_tick += kRequestTimeoutTicks;
+    deliver_report(0, 0, 0, 0);   // keep the slave online
+    nexus_poll();
+    nexus_poll();
+    ASSERT_EQ(2u, captured_packet_count);
+    EXPECT_EQ(2u, captured_packets[1].packet.index);
+}
+
+TEST(NexusConfigSync, ResendsEverythingWhenTheSlaveReconnects)
+{
+    reset_capture();
+    bring_slave_online_and_drain();
+
+    g_keyboard_tick += kLinkTimeoutTicks + 1;
+    nexus_poll();
+    EXPECT_FALSE(nexus_slave_is_online(0));
+    EXPECT_EQ(0u, captured_packet_count);
+
+    deliver_report(0, 0, 0, 0);
+    for (int i = 0; i < 8; i++)
+    {
+        nexus_poll();
+    }
+    EXPECT_EQ(3u, captured_packet_count);
+}
+
+TEST(NexusConfigSync, ForegroundRequestDoesNotStarveTheSyncMachine)
+{
+    reset_capture();
+    bring_slave_online_and_drain();
+    drop_echo = true;
+
+    nexus_sync_advanced_key_config(2);
+    nexus_poll();
+    ASSERT_EQ(1u, captured_packet_count);
+    const uint8_t in_flight_id = captured_packets[0].packet.header.id;
+
+    // The echo of the sync request arrives while the foreground waits for its
+    // own request: it must be credited to the sync machine, not lost.
+    drop_echo = false;
+    uint8_t late_echo[NEXUS_RX_BUFFER_SIZE] = {PACKET_CODE_SET, in_flight_id, PACKET_DATA_ADVANCED_KEY};
+    nexus_process_buffer(0, late_echo, sizeof(late_echo));
+
+    uint8_t request[64] = {0};
+    request[0] = PACKET_CODE_GET;
+    request[2] = PACKET_DATA_CONFIG;
+    ASSERT_EQ(0, nexus_request_timeout(0, request, sizeof(request), 1, NULL, 0));
+
+    nexus_sync_advanced_key_config(5);
+    nexus_poll();
+    ASSERT_EQ(3u, captured_packet_count) << "the sync machine moved on to the next key";
+    EXPECT_EQ(1u, captured_packets[2].packet.index);
+}
+
+TEST(NexusReport, AppliesBitmapToMappedKeys)
+{
+    reset_capture();
+
+    deliver_report(0, 0, 0, 0b101);
+    nexus_process();
+    EXPECT_TRUE(g_keyboard_advanced_keys[2].key.state);
+    EXPECT_FALSE(g_keyboard_advanced_keys[5].key.state);
+    EXPECT_TRUE(g_keyboard_advanced_keys[8].key.state);
+
+    deliver_report(0, 0, 0, 0b010);
+    nexus_process();
+    EXPECT_FALSE(g_keyboard_advanced_keys[2].key.state);
+    EXPECT_TRUE(g_keyboard_advanced_keys[5].key.state);
+    EXPECT_FALSE(g_keyboard_advanced_keys[8].key.state);
+}
+
+TEST(NexusReport, ReleasesKeysWhenTheSlaveGoesSilent)
+{
+    reset_capture();
+    deliver_report(0, 0, 0, 0b111);
+    nexus_process();
+    ASSERT_TRUE(g_keyboard_advanced_keys[5].key.state);
+
+    g_keyboard_tick += kLinkTimeoutTicks;
+    nexus_process();
+    EXPECT_TRUE(g_keyboard_advanced_keys[5].key.state) << "still within the link timeout";
+
+    g_keyboard_tick += 1;
+    nexus_process();
+    EXPECT_FALSE(g_keyboard_advanced_keys[2].key.state);
+    EXPECT_FALSE(g_keyboard_advanced_keys[5].key.state);
+    EXPECT_FALSE(g_keyboard_advanced_keys[8].key.state);
+    EXPECT_FALSE(nexus_slave_is_online(0));
+}
+
+TEST(NexusReport, RejectsFramesThatAreTooShortOrFromUnknownSlaves)
+{
+    reset_capture();
+    PacketNexus packet;
+    const volatile uint32_t bits[NEXUS_BITMAP_WORDS] = {0b111};
+    nexus_report_encode(&packet, 0, 0, 0, bits, 3);
+
+    nexus_process_buffer(0, reinterpret_cast<uint8_t *>(&packet), offsetof(PacketNexus, bits));
+    nexus_process_buffer(NEXUS_SLAVE_NUM, reinterpret_cast<uint8_t *>(&packet), sizeof(packet));
+    nexus_process_buffer(0, NULL, sizeof(packet));
+    nexus_process_buffer(0, reinterpret_cast<uint8_t *>(&packet), 0);
+    nexus_process();
+
+    EXPECT_FALSE(nexus_slave_is_online(0));
+    EXPECT_FALSE(g_keyboard_advanced_keys[2].key.state);
+}
+
+TEST(NexusReport, CopiesAnalogDataOfTheIndexedKeyExactly)
+{
+    reset_capture();
+    const AnalogValue value = A_ANTI_NORM(0.37f);
+
+    deliver_report(1, 3210, value, 0);
+    EXPECT_EQ(3210, g_keyboard_advanced_keys[5].raw);
+    EXPECT_EQ(3210, g_keyboard_advanced_keys[5].filtered_raw);
+    EXPECT_EQ(value, g_keyboard_advanced_keys[5].value);
+    EXPECT_EQ(0, g_keyboard_advanced_keys[2].raw);
+
+    deliver_report(1, 0, ANALOG_VALUE_MAX, 0);
+    EXPECT_EQ(ANALOG_VALUE_MAX, g_keyboard_advanced_keys[5].value);
+}
+
+TEST(NexusReport, OutOfRangeIndexStillAppliesTheBitmap)
+{
+    reset_capture();
+
+    deliver_report(7, 999, 999, 0b100);
+    nexus_process();
+
+    EXPECT_TRUE(g_keyboard_advanced_keys[8].key.state);
+    EXPECT_EQ(0, g_keyboard_advanced_keys[2].raw);
+    EXPECT_EQ(0, g_keyboard_advanced_keys[5].raw);
+    EXPECT_EQ(0, g_keyboard_advanced_keys[8].raw);
+}
+
+TEST(NexusEncode, ValueRoundTripsThroughTheWire)
+{
+    const AnalogValue samples[] = {ANALOG_VALUE_MIN, 1, 1000, A_ANTI_NORM(0.5f), ANALOG_VALUE_MAX - 1, ANALOG_VALUE_MAX};
+    for (AnalogValue sample : samples)
+    {
+        EXPECT_EQ(sample, nexus_value_from_wire(nexus_value_to_wire(sample)));
+    }
+}
+
+TEST(NexusEncode, ReportEncoderSetsFlagAndCopiesBitmapLittleEndian)
+{
+    PacketNexus packet;
+    const volatile uint32_t bits[NEXUS_BITMAP_WORDS] = {0x0000A5C3};
+
+    nexus_report_encode(&packet, 5, 0x1234, 0, bits, 16);
+
+    EXPECT_EQ(5 | NEXUS_REPORT_FLAG, packet.index);
+    EXPECT_EQ(0x1234, packet.raw);
+    EXPECT_EQ(0xC3, packet.bits[0]);
+    EXPECT_EQ(0xA5, packet.bits[1]);
+
+    nexus_report_encode(&packet, 0, 0, 0, bits, 11);
+    EXPECT_EQ(0xC3, packet.bits[0]);
+    EXPECT_EQ(0xA5 & 0x07, packet.bits[1]) << "bits beyond the key count are cleared";
+}
+
+TEST(NexusEncode, RawEncoderSplitsTheFirstSampleAroundTheFlag)
+{
+    uint8_t frame[8] = {0};
+    const AnalogRawValue raws[] = {0x5ABC, 0x1234, 0xFFFF};
+
+    EXPECT_EQ(6, nexus_raw_report_encode(frame, raws, 3));
+    EXPECT_EQ((0x5ABC & 0x7F) | NEXUS_REPORT_FLAG, frame[0]);
+    EXPECT_EQ(0x5ABC >> 7, frame[1]);
+    EXPECT_EQ(0x34, frame[2]);
+    EXPECT_EQ(0x12, frame[3]);
+    EXPECT_EQ(0xFF, frame[4]);
+    EXPECT_EQ(0xFF, frame[5]);
+    EXPECT_EQ(0, nexus_raw_report_encode(frame, raws, 0));
 }

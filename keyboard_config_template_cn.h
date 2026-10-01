@@ -234,6 +234,8 @@
 // #define NEXUS_SLICE_LENGTH_MAX 16       /* 单个从机切片的最大按键数。 */
 // #define NEXUS_VALUE_MAX 65535           /* 同步按键值的最大值。 */
 // #define NEXUS_BUFFER_SIZE 8             /* 每个从机的报告缓冲区大小。 */
+// #define NEXUS_LINK_TIMEOUT_MS 100       /* 从机静默超过此时间视为断开，其按键释放。 */
+// #define NEXUS_REQUEST_TIMEOUT_MS 1000   /* 等待从机回显配置请求的时间。 */
 // #define NEXUS_RETRY_COUNT 100           /* Nexus 发送重试上限。 */
 
 /************/

@@ -238,7 +238,9 @@
 // #define NEXUS_SLICE_LENGTH_MAX 16       /* Maximum keys in one slave slice. */
 // #define NEXUS_VALUE_MAX 65535           /* Maximum synchronized key value. */
 // #define NEXUS_BUFFER_SIZE 8             /* Per-slave report buffer size. */
-// #define NEXUS_RETRY_COUNT 100           /* Nexus send retry limit. */
+// #define NEXUS_RETRY_COUNT 100           /* Failed nexus_send() calls before a synchronous request gives up. */
+// #define NEXUS_LINK_TIMEOUT_MS 100       /* Silence after which a slave counts as unplugged and its keys release. */
+// #define NEXUS_REQUEST_TIMEOUT_MS 1000   /* Wait for a slave to echo a configuration request. */
 
 /****************/
 /* USB identity */
