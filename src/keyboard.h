@@ -52,8 +52,19 @@ extern "C" {
 
 #define KEYBOARD_CONFIG(index, action) ((((KEYBOARD_CONFIG_BASE + (index)) | ((action) << 6)) << 8) | KEYBOARD_OPERATION)
 
+/* Milliseconds <-> keyboard ticks. Exact for every POLLING_RATE: when the rate
+ * is a multiple or a divisor of 1000 Hz this is a single 32-bit multiply or
+ * divide by a constant; the 64-bit form is only kept for other rates. */
+#if (POLLING_RATE % 1000) == 0
+#define KEYBOARD_TIME_TO_TICK(x)   ((uint32_t)(x) * (uint32_t)(POLLING_RATE / 1000))
+#define KEYBOARD_TICK_TO_TIME(x)   ((uint32_t)(x) / (uint32_t)(POLLING_RATE / 1000))
+#elif (1000 % POLLING_RATE) == 0
+#define KEYBOARD_TIME_TO_TICK(x)   ((uint32_t)(x) / (uint32_t)(1000 / POLLING_RATE))
+#define KEYBOARD_TICK_TO_TIME(x)   ((uint32_t)(x) * (uint32_t)(1000 / POLLING_RATE))
+#else
 #define KEYBOARD_TIME_TO_TICK(x)   ((uint32_t)(((uint64_t)(x) * POLLING_RATE) / 1000))
 #define KEYBOARD_TICK_TO_TIME(x)   ((uint32_t)(((uint64_t)(x) * 1000) / POLLING_RATE))
+#endif
 
 #define KEY_BITMAP_SIZE ((TOTAL_KEY_NUM + sizeof(uint32_t)*8 - 1) / (sizeof(uint32_t)*8))
 
