@@ -565,6 +565,32 @@ the corresponding USB endpoints, and a filesystem that is safe to expose to a
 host while the keyboard is running. Test file transfer, unplug/replug, and
 power-loss behavior before enabling it in a released firmware.
 
+### 7.1 Nexus: Linking Several Boards
+
+`NEXUS_ENABLE` joins several boards into one keyboard. The master owns USB and
+the keymap; each slave (`NEXUS_IS_SLAVE 1`) scans its own keys and streams them
+to the master. The application provides the link: implement `nexus_send()`
+(master to slave) and `nexus_report()` (slave to master) from `driver.h`, and
+call `nexus_process_buffer(slave_id, frame, len)` whenever a complete frame
+arrives on either side. Both send functions must copy or finish sending the
+frame before they return and return `0` on success. Frames are described in
+`nexus.h`.
+
+On the master, define `g_nexus_slave_configs[NEXUS_SLAVE_NUM]`: each entry maps
+slave key `j` to master key `map[j]` for `length` keys (at most
+`NEXUS_SLICE_LENGTH_MAX`). `keyboard_init()` resolves the maps; `keyboard_task()`
+applies the slaves' reports and `keyboard_process()` pushes each slave's
+advanced-key configuration without blocking, both at start-up and whenever it
+changes or a slave reconnects. A slave that stops reporting for
+`NEXUS_LINK_TIMEOUT_MS` is treated as unplugged and its keys release.
+`nexus_slave_is_online()` exposes that state. With `NEXUS_USE_RAW 1` the
+slaves send raw samples instead and the master normalizes them; master keys
+that no slave maps are left to the application's `keyboard_scan()`.
+
+`nexus_request_timeout()` offers synchronous request/response for application
+use. It spins on `g_keyboard_tick`, so only call it from the foreground loop
+or from an interrupt below the tick's priority.
+
 ## 8. Build, Test, and Troubleshoot
 
 ### 8.1 Run libamp Host Tests

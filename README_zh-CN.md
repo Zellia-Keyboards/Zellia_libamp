@@ -412,6 +412,14 @@ RGB 的三张表使用以下相互关联的索引空间：
 
 `MTP_ENABLE` 通过 USB 暴露文件访问。它需要 MTP 后端源码、对应 USB 端点，以及一个能在键盘运行时安全暴露给主机的文件系统。在发布固件前，应测试文件传输、拔插和断电行为。
 
+### 7.1 Nexus：连接多块板子
+
+`NEXUS_ENABLE` 将多块板子组成一把键盘。主机持有 USB 和键位图；每个从机（`NEXUS_IS_SLAVE 1`）扫描自己的按键并流式上报给主机。链路由应用提供：实现 `driver.h` 中的 `nexus_send()`（主机到从机）和 `nexus_report()`（从机到主机），并在任一端收到完整帧时调用 `nexus_process_buffer(slave_id, frame, len)`。两个发送函数必须在返回前复制或发送完帧，成功时返回 `0`。帧格式见 `nexus.h`。
+
+主机侧需定义 `g_nexus_slave_configs[NEXUS_SLAVE_NUM]`：每项把从机按键 `j` 映射到主机按键 `map[j]`，共 `length` 个（不超过 `NEXUS_SLICE_LENGTH_MAX`）。`keyboard_init()` 解析映射；`keyboard_task()` 应用从机上报，`keyboard_process()` 以非阻塞方式下发各从机的高级按键配置——启动时、配置变化时以及从机重新连接时都会下发。从机静默超过 `NEXUS_LINK_TIMEOUT_MS` 即视为拔出，其按键全部释放，可用 `nexus_slave_is_online()` 查询。`NEXUS_USE_RAW 1` 时从机改为发送原始采样，由主机归一化；没有任何从机映射的主机按键留给应用的 `keyboard_scan()` 处理。
+
+`nexus_request_timeout()` 为应用提供同步请求/响应。它在 `g_keyboard_tick` 上自旋等待，因此只能在前台循环或优先级低于 tick 的中断中调用。
+
 ## 8. 构建、测试和排错
 
 ### 8.1 运行 libamp 主机测试
