@@ -29,11 +29,13 @@ typedef struct __EventArgument
 
 typedef EventArgument EventLoopQueueElm;
 
+/* Single-producer, single-consumer ring: pushed from the tick, popped from the
+ * main loop. front and rear are each written by one side only. */
 typedef struct __EventLoopQueue
 {
     EventLoopQueueElm *data;
-    int16_t front;
-    int16_t rear;
+    volatile int16_t front;
+    volatile int16_t rear;
     int16_t len;
 } EventLoopQueue;
 

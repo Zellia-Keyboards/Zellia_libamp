@@ -24,6 +24,7 @@ EventLoopQueueElm event_loop_queue_pop(EventLoopQueue *q)
         return empty;
     }
     const EventLoopQueueElm element = q->data[q->front];
+    LIBAMP_COMPILER_FENCE(); /* copy out before releasing the slot to the producer */
     q->front = event_loop_queue_next_index(q, q->front);
     return element;
 }
@@ -36,5 +37,6 @@ void event_loop_queue_push(EventLoopQueue *q, EventLoopQueueElm t)
         return; /* full: the newest event is dropped */
     }
     q->data[q->rear] = t;
+    LIBAMP_COMPILER_FENCE(); /* the element is complete before it is published */
     q->rear = next_rear;
 }

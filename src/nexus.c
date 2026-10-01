@@ -21,14 +21,7 @@
  * the flag that announces it. This is sufficient on a single core; a
  * multi-core port would need hardware barriers in NEXUS_FENCE().
  */
-#if !defined(__STDC_NO_ATOMICS__) && defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L
-#include <stdatomic.h>
-#define NEXUS_FENCE() atomic_signal_fence(memory_order_seq_cst)
-#elif defined(__GNUC__)
-#define NEXUS_FENCE() __asm__ volatile("" ::: "memory")
-#else
-#define NEXUS_FENCE() ((void)0)
-#endif
+#define NEXUS_FENCE() LIBAMP_COMPILER_FENCE()
 
 #define NEXUS_MIN(a, b) ((a) < (b) ? (a) : (b))
 #define NEXUS_LINK_TIMEOUT_TICKS    KEYBOARD_TIME_TO_TICK(NEXUS_LINK_TIMEOUT_MS)
