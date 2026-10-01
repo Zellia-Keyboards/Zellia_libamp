@@ -13,6 +13,9 @@ _Static_assert(LUT_LENGTH > 0 && LUT_LENGTH <= 65535, "LUT_LENGTH must fit the A
 static AnalogRawValue calibration_low_pass_raws[ADVANCED_KEY_NUM];
 #endif
 
+static void advanced_key_update_effective_scale(AdvancedKey *advanced_key);
+
+
 
 static inline bool advanced_key_update_digital_mode(AdvancedKey* advanced_key)
 {
@@ -99,6 +102,7 @@ void advanced_key_init(AdvancedKey* advanced_key, uint16_t id)
     advanced_key->filtered_raw = 0;
     advanced_key->extremum = 0;
     advanced_key->difference = 0;
+    advanced_key->q_scale_effective = 0; /* recomputed on first use */
 }
 
 bool advanced_key_update(AdvancedKey* advanced_key, AnalogValue value)
@@ -255,11 +259,23 @@ void advanced_key_set_deadzone(AdvancedKey* advanced_key, AnalogValue upper, Ana
 {
     advanced_key->config.upper_deadzone = upper;
     advanced_key->config.lower_deadzone = lower;
+    advanced_key_update_effective_scale(advanced_key);
 }
 
 __WEAK AnalogRawValue advanced_key_read_raw(AdvancedKey *advanced_key)
 {
     return ringbuf_avg(&g_adc_ringbufs[g_analog_map[advanced_key->key.id]]);
+}
+
+/* Recompute the Q16 effective-travel factor for the current dead zones. The
+ * one division of the dead-zone mapping lives here, off the per-frame path. */
+static void advanced_key_update_effective_scale(AdvancedKey *advanced_key)
+{
+    const uint32_t deadzone_sum = (uint32_t)advanced_key->config.upper_deadzone + advanced_key->config.lower_deadzone;
+    advanced_key->q_scale_effective_deadzone = deadzone_sum;
+    advanced_key->q_scale_effective = deadzone_sum < ANALOG_VALUE_RANGE
+        ? ((uint32_t)ANALOG_VALUE_RANGE << 16) / ((uint32_t)ANALOG_VALUE_RANGE - deadzone_sum)
+        : 0;
 }
 
 /* Travel with the dead zones removed, stretched back over the full range. */
@@ -276,13 +292,17 @@ AnalogValue advanced_key_get_effective_value(AdvancedKey *advanced_key)
     {
         return ANALOG_VALUE_MAX;
     }
-    const int32_t active_range = (int32_t)ANALOG_VALUE_RANGE - upper_deadzone - lower_deadzone;
-    if (active_range <= 0)
+    /* The dead zones may be written directly (host packets, stored profiles,
+     * user code), so the cached factor is checked against them here. */
+    if (advanced_key->q_scale_effective == 0 ||
+        advanced_key->q_scale_effective_deadzone != (uint32_t)upper_deadzone + (uint32_t)lower_deadzone)
     {
-        return ANALOG_VALUE_MAX;
+        advanced_key_update_effective_scale(advanced_key);
+        if (advanced_key->q_scale_effective == 0)
+        {
+            return ANALOG_VALUE_MAX; /* dead zones cover the whole range */
+        }
     }
-    /* Both factors are below 2^16, so the product fits in 32 bits and the
-     * division is a single hardware instruction instead of a 64-bit routine. */
     const uint32_t active_travel = (uint32_t)(travel - upper_deadzone);
-    return (AnalogValue)(active_travel * (uint32_t)ANALOG_VALUE_RANGE / (uint32_t)active_range) + ANALOG_VALUE_MIN;
+    return (AnalogValue)(((uint64_t)active_travel * advanced_key->q_scale_effective) >> 16) + ANALOG_VALUE_MIN;
 }

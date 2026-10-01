@@ -26,7 +26,7 @@ typedef uint16_t AnalogRawValue;
 
 #define ANALOG_VALUE_RANGE (ANALOG_VALUE_MAX - ANALOG_VALUE_MIN)
 
-#define ANALOG_VALUE_NORMALIZE(x) ((x)/(float)ANALOG_VALUE_RANGE)
+#define ANALOG_VALUE_NORMALIZE(x) ((x) * (1.0f / (float)ANALOG_VALUE_RANGE))
 #define ANALOG_VALUE_ANTI_NORMALIZE(x) ((AnalogValue)(((float)(x))*ANALOG_VALUE_RANGE))
 
 #define A_NORM ANALOG_VALUE_NORMALIZE
@@ -76,9 +76,14 @@ typedef struct __AdvancedKey
     AnalogValue filtered_raw;
     AnalogValue extremum;
     int16_t difference;
+    /* Q16 raw-delta to lookup-table-index factor, set by advanced_key_set_range(). */
     int32_t q_scale_to_index;
+    /* Q16 factor stretching the dead-zone-free travel over the full range, and
+     * the dead-zone sum it was computed for. Refreshed when the dead zones
+     * change so advanced_key_get_effective_value() never divides. */
+    uint32_t q_scale_effective;
+    uint32_t q_scale_effective_deadzone;
     AdvancedKeyConfiguration config;
-
 } AdvancedKey;
 
 /* Assign the key its id and clear its runtime state (sample, travel, extremum).

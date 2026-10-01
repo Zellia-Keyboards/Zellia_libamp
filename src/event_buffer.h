@@ -16,7 +16,9 @@ extern "C" {
 #define EVENT_BUFFER_LENGTH 32
 #endif
 
-#define event_loop_queue_foreach(q, type, item) for (uint16_t __index = (q)->front; __index != (q)->rear; __index = (__index + 1) % (q)->len)\
+/* Visit the queued elements in order, oldest first. The body may pop the
+ * element it is visiting (keyboard_process() does), nothing else. */
+#define event_loop_queue_foreach(q, type, item) for (int16_t __index = (q)->front; __index != (q)->rear; __index = event_loop_queue_next_index((q), __index))\
                                               for (type *item = &((q)->data[__index]); item; item = NULL)
 
 typedef struct __EventArgument
@@ -36,6 +38,12 @@ typedef struct __EventLoopQueue
 } EventLoopQueue;
 
 typedef EventLoopQueue EventBuffer;
+
+/* Index after index, wrapping at the capacity; a compare instead of a modulo. */
+static inline int16_t event_loop_queue_next_index(const EventLoopQueue *q, int16_t index)
+{
+    return (int16_t)(index + 1 == q->len ? 0 : index + 1);
+}
 
 void event_loop_queue_init(EventLoopQueue* q, EventLoopQueueElm*data, uint16_t len);
 EventLoopQueueElm event_loop_queue_pop(EventLoopQueue* q);

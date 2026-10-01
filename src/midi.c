@@ -541,7 +541,7 @@ void midi_event_handler(KeyboardEvent event)
     {
         /* Travel per millisecond relative to the reference velocity; fabsf keeps
          * this in single precision (fabs would promote to a software double). */
-        float intensity = fabsf(((AdvancedKey*)event.key)->difference * (POLLING_RATE / 1000.0f) / (float)MIDI_REF_VELOCITY);
+        float intensity = fabsf((float)((AdvancedKey*)event.key)->difference * ((POLLING_RATE / 1000.0f) / (float)MIDI_REF_VELOCITY));
         if (intensity > 1.0f)
         {
             intensity = 1.0f;

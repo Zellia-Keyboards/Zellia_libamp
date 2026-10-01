@@ -30,7 +30,8 @@ extern "C" {
 #if FILTER_DOMAIN == FILTER_DOMAIN_RAW
 #define FILTER_HYSTERESIS 3
 #else
-#define FILTER_HYSTERESIS A_NORM(0.01f)
+/* 1% of the full travel, in normalized counts. */
+#define FILTER_HYSTERESIS A_ANTI_NORM(0.01f)
 #endif
 #endif
 
