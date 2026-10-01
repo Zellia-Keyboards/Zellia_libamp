@@ -81,7 +81,9 @@ typedef struct __AdvancedKey
 
 } AdvancedKey;
 
-void advanced_key_init(AdvancedKey *advanced_key);
+/* Assign the key its id and clear its runtime state (sample, travel, extremum).
+ * The configuration and calibration range are left untouched. */
+void advanced_key_init(AdvancedKey *advanced_key, uint16_t id);
 bool advanced_key_update(AdvancedKey *advanced_key, AnalogValue value);
 bool advanced_key_update_raw(AdvancedKey *advanced_key, AnalogValue value);
 bool advanced_key_update_state(AdvancedKey *advanced_key, bool state);

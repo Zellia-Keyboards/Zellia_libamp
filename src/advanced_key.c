@@ -84,6 +84,16 @@ static inline bool advanced_key_update_analog_speed_mode(AdvancedKey* advanced_k
     return state;
 }
 
+void advanced_key_init(AdvancedKey* advanced_key, uint16_t id)
+{
+    key_init(&advanced_key->key, id);
+    advanced_key->value = 0;
+    advanced_key->raw = 0;
+    advanced_key->filtered_raw = 0;
+    advanced_key->extremum = 0;
+    advanced_key->difference = 0;
+}
+
 bool advanced_key_update(AdvancedKey* advanced_key, AnalogValue value)
 {
     if (advanced_key->config.mode == ADVANCED_KEY_DIGITAL_MODE)

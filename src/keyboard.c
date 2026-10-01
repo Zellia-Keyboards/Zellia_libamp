@@ -567,14 +567,18 @@ void keyboard_init(void)
 {
     g_keyboard_tick = 0;
     g_keyboard_config.enable_report = true;
-    for (int i = 0; i < ADVANCED_KEY_NUM; i++)
+    g_keyboard_report_flags.raw = 0;
+    target_calibration_tick = 0;
+    for (uint16_t i = 0; i < ADVANCED_KEY_NUM; i++)
     {
-        g_keyboard_advanced_keys[i].key.id = i;
+        advanced_key_init(&g_keyboard_advanced_keys[i], i);
     }
-    for (int i = 0; i < KEY_NUM; i++)
+    for (uint16_t i = 0; i < KEY_NUM; i++)
     {
-        g_keyboard_keys[i].id = ADVANCED_KEY_NUM + i;
+        key_init(&g_keyboard_keys[i], ADVANCED_KEY_NUM + i);
     }
+    memset((void*)g_keyboard_bitmap, 0, sizeof(g_keyboard_bitmap));
+    layer_init();
 #ifdef RGB_ENABLE
     rgb_init();
 #endif

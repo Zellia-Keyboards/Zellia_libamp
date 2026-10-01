@@ -77,6 +77,11 @@ TEST(AdvancedKeyTest, RapidTriggerMode)
     EXPECT_EQ(advanced_key.extremum, A_ANTI_NORM(0.78));
 }
 
+// Expected difference between two normalized travels, computed the same way the
+// library does it (difference of the converted values) so it stays well defined
+// for negative deltas; a negative float cast to AnalogValue is undefined.
+#define A_DIFF(a, b) ((int32_t)A_ANTI_NORM(a) - (int32_t)A_ANTI_NORM(b))
+
 TEST(AdvancedKeyTest, SpeedMode)
 {
     static AdvancedKey advanced_key = 
@@ -94,34 +99,34 @@ TEST(AdvancedKeyTest, SpeedMode)
     EXPECT_NEAR(advanced_key.difference, A_ANTI_NORM(0.09),A_ANTI_NORM(1e-4));
     EXPECT_FALSE(advanced_key.key.state);
     advanced_key_update(&advanced_key, A_ANTI_NORM(0.12));
-    EXPECT_NEAR(advanced_key.difference, A_ANTI_NORM(0.12-0.09), A_ANTI_NORM(1e-4));
+    EXPECT_NEAR(advanced_key.difference, A_DIFF(0.12, 0.09), A_ANTI_NORM(1e-4));
     EXPECT_FALSE(advanced_key.key.state);
     advanced_key_update(&advanced_key, A_ANTI_NORM(0.20));
-    EXPECT_NEAR(advanced_key.difference, A_ANTI_NORM(0.20-0.12), A_ANTI_NORM(1e-4));
+    EXPECT_NEAR(advanced_key.difference, A_DIFF(0.20, 0.12), A_ANTI_NORM(1e-4));
     EXPECT_TRUE(advanced_key.key.state);
     advanced_key_update(&advanced_key, A_ANTI_NORM(0.60));
-    EXPECT_NEAR(advanced_key.difference, A_ANTI_NORM(0.60-0.20), A_ANTI_NORM(1e-4));
+    EXPECT_NEAR(advanced_key.difference, A_DIFF(0.60, 0.20), A_ANTI_NORM(1e-4));
     EXPECT_TRUE(advanced_key.key.state);
     advanced_key_update(&advanced_key, A_ANTI_NORM(0.80));
-    EXPECT_NEAR(advanced_key.difference, A_ANTI_NORM(0.80-0.60), A_ANTI_NORM(1e-4));
+    EXPECT_NEAR(advanced_key.difference, A_DIFF(0.80, 0.60), A_ANTI_NORM(1e-4));
     EXPECT_TRUE(advanced_key.key.state);
     advanced_key_update(&advanced_key, A_ANTI_NORM(0.78));
-    EXPECT_NEAR(advanced_key.difference, (int16_t)A_ANTI_NORM(0.78-0.80), A_ANTI_NORM(1e-4));
+    EXPECT_NEAR(advanced_key.difference, A_DIFF(0.78, 0.80), A_ANTI_NORM(1e-4));
     EXPECT_TRUE(advanced_key.key.state);
     advanced_key_update(&advanced_key, A_ANTI_NORM(0.72));
-    EXPECT_NEAR(advanced_key.difference, (int16_t)A_ANTI_NORM(0.72-0.78), A_ANTI_NORM(1e-4));
+    EXPECT_NEAR(advanced_key.difference, A_DIFF(0.72, 0.78), A_ANTI_NORM(1e-4));
     EXPECT_FALSE(advanced_key.key.state);
     advanced_key_update(&advanced_key, A_ANTI_NORM(0.74));
-    EXPECT_NEAR(advanced_key.difference, A_ANTI_NORM(0.74-0.72), A_ANTI_NORM(1e-4));
+    EXPECT_NEAR(advanced_key.difference, A_DIFF(0.74, 0.72), A_ANTI_NORM(1e-4));
     EXPECT_FALSE(advanced_key.key.state);
     advanced_key_update(&advanced_key, A_ANTI_NORM(0.76));
-    EXPECT_NEAR(advanced_key.difference, A_ANTI_NORM(0.76-0.74), A_ANTI_NORM(1e-4));
+    EXPECT_NEAR(advanced_key.difference, A_DIFF(0.76, 0.74), A_ANTI_NORM(1e-4));
     EXPECT_FALSE(advanced_key.key.state);
     advanced_key_update(&advanced_key, A_ANTI_NORM(0.78));
-    EXPECT_NEAR(advanced_key.difference, A_ANTI_NORM(0.78-0.76), A_ANTI_NORM(1e-4));
+    EXPECT_NEAR(advanced_key.difference, A_DIFF(0.78, 0.76), A_ANTI_NORM(1e-4));
     EXPECT_FALSE(advanced_key.key.state);
     advanced_key_update(&advanced_key, A_ANTI_NORM(0.81));
-    EXPECT_NEAR(advanced_key.difference, A_ANTI_NORM(0.81-0.78), A_ANTI_NORM(1e-4));
+    EXPECT_NEAR(advanced_key.difference, A_DIFF(0.81, 0.78), A_ANTI_NORM(1e-4));
     EXPECT_TRUE(advanced_key.key.state);
 }
 
@@ -133,7 +138,7 @@ TEST(AdvancedKeyTest, Value)
         advanced_key.config.mode = i;
         for (int j = 0; j < 1000; j++)
         {
-            float value = A_ANTI_NORM((-cos(j/100.f)*0.5+1));
+            float value = A_ANTI_NORM((-cos(j/100.f)*0.5+0.5)); // stays within [0, 1]
             advanced_key_update(&advanced_key, value);
             EXPECT_EQ(advanced_key.value, value);
         }

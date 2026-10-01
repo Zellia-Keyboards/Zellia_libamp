@@ -153,8 +153,8 @@ TEST(NexusRequest, EventDoesNotConsumeTransactionIdField)
     ASSERT_EQ(0, nexus_send_timeout(0, reinterpret_cast<uint8_t *>(&event),
                                     sizeof(event), 1));
     ASSERT_EQ(1u, captured_packet_count);
-    EXPECT_EQ(PACKET_CODE_EVENT, captured_packets[0].packet.code);
-    EXPECT_EQ(PACKET_EVENT_CONFIG_CHANGED, captured_packets[0].packet.id);
+    EXPECT_EQ(PACKET_CODE_EVENT, captured_packets[0].packet.header.code);
+    EXPECT_EQ(PACKET_EVENT_CONFIG_CHANGED, captured_packets[0].packet.header.id);
 }
 
 TEST(NexusConfigSync, SendsMappedKeyUsingSlaveLocalIndex)
@@ -167,8 +167,8 @@ TEST(NexusConfigSync, SendsMappedKeyUsingSlaveLocalIndex)
     ASSERT_TRUE(captured_decode_ok);
     ASSERT_EQ(1u, captured_packet_count);
     EXPECT_EQ(0u, captured_packets[0].slave_id);
-    EXPECT_EQ(PACKET_CODE_SET, captured_packets[0].packet.code);
-    EXPECT_EQ(PACKET_DATA_ADVANCED_KEY, captured_packets[0].packet.type);
+    EXPECT_EQ(PACKET_CODE_SET, captured_packets[0].packet.header.code);
+    EXPECT_EQ(PACKET_DATA_ADVANCED_KEY, captured_packets[0].packet.header.type);
     EXPECT_EQ(1u, captured_packets[0].packet.index);
     EXPECT_EQ(g_keyboard_advanced_keys[5].config.mode, captured_packets[0].packet.data.mode);
     EXPECT_EQ(g_keyboard_advanced_keys[5].config.activation_value, captured_packets[0].packet.data.activation_value);

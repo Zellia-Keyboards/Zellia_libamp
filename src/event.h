@@ -25,8 +25,8 @@ typedef struct
     uint8_t is_virtual;
     void* key;
 } KeyboardEvent;
-#define MK_EVENT(keycode, event, key) ((KeyboardEvent){(keycode), (event), false, (key)})
-#define MK_VIRTUAL_EVENT(keycode, event, key) ((KeyboardEvent){(keycode), (event), true, (key)})
+#define MK_EVENT(keycode, event, key) ((KeyboardEvent){(Keycode)(keycode), (uint8_t)(event), false, (void*)(key)})
+#define MK_VIRTUAL_EVENT(keycode, event, key) ((KeyboardEvent){(Keycode)(keycode), (uint8_t)(event), true, (void*)(key)})
 #define CALC_EVENT(state, next_state) ((((bool)(state)) != ((bool)(next_state))) | (((bool)(next_state)) << 1))
 #define EVENT_CHANGED(event) ((event) & 0x01)
 #define EVENT_STATE(event) (((event) >> 1) & 0x01)

@@ -12,6 +12,14 @@ static uint16_t layer_state;
 __WEAK Keycode g_keymap_cache[TOTAL_KEY_NUM];
 bool g_keymap_lock[TOTAL_KEY_NUM];
 
+void layer_init(void)
+{
+    layer_state = 0;
+    g_current_layer = 0;
+    memset(g_keymap_lock, 0, sizeof(g_keymap_lock));
+}
+
+
 void layer_event_handler(KeyboardEvent event)
 {
     const uint8_t layer = ((event.keycode >> 8) & 0x0F);
