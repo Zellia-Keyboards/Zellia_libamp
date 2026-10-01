@@ -266,6 +266,10 @@ void keyboard_key_event_up_dispatch(KeyboardEvent event)
 
 void keyboard_event_handler(KeyboardEvent event)
 {
+    if (!keyboard_event_needs_dispatch(event))
+    {
+        return;
+    }
     const uint8_t keycode = KEYCODE_GET_MAIN(event.keycode);
     if (!event.is_virtual)
     {
@@ -940,26 +944,38 @@ void keyboard_process(void)
 #endif
 }
 
+/* Debounce the physical state the scan just wrote into the key, publish the
+ * resulting report state, and hand the key's bound keycode to the event
+ * handler. Returns whether the report state changed. Unchanged keys skip the
+ * handler call entirely unless their binding needs refreshing on every poll
+ * (see keyboard_event_needs_dispatch()); this is the per-key, per-tick fast path. */
+static inline bool keyboard_key_report_and_dispatch(Key *key)
+{
+    const bool changed = keyboard_key_set_report_state(key, keyboard_key_debounce(key));
+    const KeyboardEvent event = MK_EVENT(layer_cache_get_keycode(key->id),
+                                         EVENT_TYPE(changed, key->report_state),
+                                         key);
+    if (keyboard_event_needs_dispatch(event))
+    {
+        keyboard_event_handler(event);
+    }
+    return changed;
+}
+
 bool keyboard_key_update(Key *key, bool state)
 {
-    bool changed = key_update(key, state);
-    changed = keyboard_key_set_report_state(key, keyboard_key_debounce(key));
-    keyboard_event_handler(MK_EVENT(layer_cache_get_keycode(key->id), changed | (key->report_state<<1), key));
-    return changed;
+    key_update(key, state);
+    return keyboard_key_report_and_dispatch(key);
 }
 
 bool keyboard_advanced_key_update(AdvancedKey *advanced_key, AnalogValue value)
 {
-    bool changed = advanced_key_update(advanced_key, value);
-    changed = keyboard_key_set_report_state(&advanced_key->key, keyboard_key_debounce(&advanced_key->key));
-    keyboard_event_handler(MK_EVENT(layer_cache_get_keycode(advanced_key->key.id), changed | (advanced_key->key.report_state<<1), advanced_key));
-    return changed;
+    advanced_key_update(advanced_key, value);
+    return keyboard_key_report_and_dispatch(&advanced_key->key);
 }
 
 bool keyboard_advanced_key_update_raw(AdvancedKey *advanced_key, AnalogRawValue raw)
 {
-    bool changed = advanced_key_update_raw(advanced_key, raw);
-    changed = keyboard_key_set_report_state(&advanced_key->key, keyboard_key_debounce(&advanced_key->key));
-    keyboard_event_handler(MK_EVENT(layer_cache_get_keycode(advanced_key->key.id), changed | (advanced_key->key.report_state<<1), advanced_key));
-    return changed;
+    advanced_key_update_raw(advanced_key, raw);
+    return keyboard_key_report_and_dispatch(&advanced_key->key);
 }

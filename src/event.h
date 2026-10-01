@@ -27,7 +27,10 @@ typedef struct
 } KeyboardEvent;
 #define MK_EVENT(keycode, event, key) ((KeyboardEvent){(Keycode)(keycode), (uint8_t)(event), false, (void*)(key)})
 #define MK_VIRTUAL_EVENT(keycode, event, key) ((KeyboardEvent){(Keycode)(keycode), (uint8_t)(event), true, (void*)(key)})
-#define CALC_EVENT(state, next_state) ((((bool)(state)) != ((bool)(next_state))) | (((bool)(next_state)) << 1))
+/* Event type from "the state changed on this poll" and "the state is now pressed":
+ * bit 0 is the change flag, bit 1 the current state (see KeyboardEventType). */
+#define EVENT_TYPE(changed, state) ((uint8_t)(((changed) ? 0x01 : 0x00) | ((state) ? 0x02 : 0x00)))
+#define CALC_EVENT(state, next_state) EVENT_TYPE(((bool)(state)) != ((bool)(next_state)), (next_state))
 #define EVENT_CHANGED(event) ((event) & 0x01)
 #define EVENT_STATE(event) (((event) >> 1) & 0x01)
 

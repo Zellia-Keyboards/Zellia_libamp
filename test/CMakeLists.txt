@@ -59,3 +59,15 @@ target_link_libraries(libamp_serial_override_tests
 )
 
 gtest_discover_tests(libamp_serial_override_tests)
+
+# Hot-path micro-benchmark; built with the tests but not registered with ctest.
+add_executable(libamp_bench
+    test_common/keyboard_user.c
+    test_common/test_fixture.cpp
+    bench/bench_hot_paths.cpp
+)
+
+target_link_libraries(libamp_bench
+    PRIVATE
+    libamp
+)
