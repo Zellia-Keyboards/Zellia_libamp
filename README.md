@@ -329,6 +329,22 @@ or USB callbacks share state with it, use the synchronization rules appropriate
 for the platform. libamp resets `g_keyboard_tick` in `keyboard_init()`, but the
 platform is responsible for every subsequent increment.
 
+#### Execution contexts
+
+libamp assumes three contexts, from highest to lowest priority. Each entry
+point below belongs to exactly one of them.
+
+| Context | Entry points | Notes |
+| --- | --- | --- |
+| Transport interrupt (may preempt the tick) | `nexus_process_buffer()`, `packet_process_buffer()`, `midi_input_callback()`, `ringbuf_push()`, `encoder_input()`, `encoder_input_delta()` | Short and allocation-free. They publish word-sized values that the tick picks up; keep their priority at or above the tick's. |
+| Keyboard tick (`POLLING_RATE`, timer interrupt or deadline loop) | `keyboard_task()` and everything it calls: key sampling, debounce, event handlers, HID report sending, `packet_buffer_flush()`, `nexus_process()` / `nexus_send_report()` | Must not be re-entered. `hid_send_*()` and `nexus_report()` are therefore called from this context and must not block. |
+| Main loop | `keyboard_process()` (event poller, `rgb_process()`, `nexus_poll()`, console flush, statistics saving, delayed calibration), `analog_calibrate()`, `rgb_init_flash()`, `rgb_flash()`, every `storage_*()` and `fs_*()` function, `nexus_request_timeout()` / `nexus_send_timeout()` | May take milliseconds (flash writes, calibration scans). The synchronous Nexus requests spin on `g_keyboard_tick`, so the tick must already be running. |
+
+Keyboard operations bound to keys (`KEYBOARD_SAVE`, profile selection, factory
+reset) write to storage from the context that delivers the key event, which is
+the tick by default; define `KEYBOARD_OPERATION_POLLING` to run them from
+`keyboard_process()` instead when flash access must stay out of interrupts.
+
 For startup calibration, wait briefly after `keyboard_init()` for analog
 samples to become stable, then call `analog_calibrate()` once. The delay should
 be long enough for the input acquisition path to provide representative samples.

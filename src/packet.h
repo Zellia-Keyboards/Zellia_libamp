@@ -274,6 +274,8 @@ typedef struct __PacketLayoutOptions
   uint64_t layout_options;
 } __PACKED PacketLayoutOptions;
 
+/* Handle one incoming raw HID / Nexus packet. May be called from the transport
+ * interrupt; the response is queued and sent by keyboard_task(). */
 void packet_process_buffer(uint8_t *buf, uint16_t len);
 void packet_process(uint8_t *buf, uint16_t len);
 void packet_process_advanced_key(PacketDataHeader*data);

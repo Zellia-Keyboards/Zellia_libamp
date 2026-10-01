@@ -67,7 +67,7 @@ static void rgb_output_lut_rebuild(uint8_t brightness)
     const float brightness_scale = brightness / 255.0f;
     for (int value = 0; value < 256; value++)
     {
-        rgb_output_lut[value] = (uint8_t)(GAMMA_CORRECT(value, 255) * brightness_scale + 0.5);
+        rgb_output_lut[value] = (uint8_t)(GAMMA_CORRECT(value, 255) * brightness_scale + 0.5f);
     }
     rgb_output_lut_brightness = brightness;
     rgb_output_lut_valid = true;

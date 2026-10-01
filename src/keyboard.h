@@ -216,6 +216,12 @@ void keyboard_report_add(KeyboardEvent event);
 void keyboard_report_clear(void);
 int keyboard_report_send(void);
 
+/* Execution contexts (see README, "Execution contexts"):
+ *   keyboard_init()    once, before the tick starts; mounts storage.
+ *   keyboard_task()    keyboard tick (POLLING_RATE), interrupt or deadline
+ *                      loop; never re-entered. Everything it calls, including
+ *                      hid_send_*() and nexus_report(), runs here.
+ *   keyboard_process() main loop; may take milliseconds (RGB frame, flash). */
 void keyboard_init(void);
 void keyboard_task(void);
 void keyboard_process(void);
