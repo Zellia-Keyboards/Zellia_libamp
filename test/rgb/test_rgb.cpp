@@ -188,3 +188,73 @@ TEST(RGB, FrameDueCheckHonoursTheIntervalAcrossTickWrap)
     EXPECT_FALSE(rgb_frame_is_due(5, 0xFFFFFFFEu, 8)) << "seven ticks across the wrap";
     EXPECT_TRUE(rgb_frame_is_due(6, 0xFFFFFFFEu, 8)) << "eight ticks across the wrap";
 }
+
+// --- Reference frames -------------------------------------------------------
+// Hash a deterministic scenario per renderer so that an optimization of the
+// render loop can be shown to reproduce every frame bit for bit. The expected
+// values were captured from the renderer before those optimizations.
+
+namespace {
+
+uint32_t fnv1a_colors(uint32_t h)
+{
+    for (uint16_t i = 0; i < RGB_NUM; i++) {
+        const uint8_t bytes[3] = {g_rgb_colors[i].r, g_rgb_colors[i].g, g_rgb_colors[i].b};
+        for (uint8_t b : bytes) {
+            h ^= b;
+            h *= 16777619u;
+        }
+    }
+    return h;
+}
+
+uint32_t render_fingerprint(RGBBaseMode base_mode, RGBMode key_mode)
+{
+    g_rgb_base_config.mode = base_mode;
+    g_rgb_base_config.rgb = {200, 80, 30};
+    g_rgb_base_config.secondary_rgb = {10, 60, 220};
+    g_rgb_base_config.speed = 20;
+    g_rgb_base_config.direction = 37;
+    g_rgb_base_config.density = 3;
+    g_rgb_base_config.brightness = 255;
+    for (uint16_t i = 0; i < RGB_NUM; i++) {
+        g_rgb_configs[i].mode = key_mode;
+        g_rgb_configs[i].rgb = {255, 128, 64};
+        g_rgb_configs[i].speed = 20;
+        g_rgb_configs[i].begin_tick = 0;
+    }
+    for (uint16_t i = 0; i < ADVANCED_KEY_NUM; i++) {
+        g_keyboard_advanced_keys[i].value = (AnalogValue)(ANALOG_VALUE_MIN + (i * 977u) % ANALOG_VALUE_RANGE);
+        g_keyboard_advanced_keys[i].key.report_state = (i % 5) == 0;
+    }
+
+    uint32_t h = 2166136261u;
+    g_keyboard_tick = 1000;
+    for (int frame = 0; frame < 6; frame++) {
+        rgb_process();
+        h = fnv1a_colors(h);
+        g_keyboard_tick += 250;
+        if (frame == 1) {
+            for (uint16_t i = 0; i < ADVANCED_KEY_NUM; i++) {
+                g_keyboard_advanced_keys[i].key.report_state = 0;   /* keys released: fades run */
+            }
+        }
+        if (frame == 2) {
+            g_rgb_base_config.direction = 123;      /* direction changes mid-way */
+        }
+        if (frame == 3) {
+            g_rgb_base_config.rgb = {15, 230, 120};  /* base color changes mid-way */
+        }
+    }
+    return h;
+}
+
+} // namespace
+
+TEST(RGB, RenderersReproduceTheirReferenceFrames)
+{
+    EXPECT_EQ(2761176814u, render_fingerprint(RGB_BASE_MODE_RAINBOW, RGB_MODE_LINEAR));
+    EXPECT_EQ(965217455u, render_fingerprint(RGB_BASE_MODE_WAVE, RGB_MODE_TRIGGER));
+    EXPECT_EQ(3476325781u, render_fingerprint(RGB_BASE_MODE_BLANK, RGB_MODE_JELLY));
+    EXPECT_EQ(3643513885u, render_fingerprint(RGB_BASE_MODE_RAINBOW, RGB_MODE_CYCLE));
+}

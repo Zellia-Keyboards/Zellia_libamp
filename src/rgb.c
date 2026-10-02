@@ -59,6 +59,25 @@ static RGBArgumentListNode rgb_argument_list_buffer[RGB_ARGUMENT_LIST_BUFFER_LEN
 static uint32_t rgb_frame_tick;
 static bool rgb_frame_rendered;
 
+/* Per-frame constants of the base effect that depend only on the
+ * configuration: the direction's sine and cosine, and the base color in HSV.
+ * They are recomputed only when the configuration value they derive from
+ * changes, which spares two libm calls and a color conversion per frame
+ * without changing a single frame. */
+static float rgb_base_direction_sin;
+static float rgb_base_direction_cos;
+static uint16_t rgb_base_direction_cached;
+static bool rgb_base_direction_valid;
+static ColorHSV rgb_base_hsv_cached;
+static ColorRGB rgb_base_rgb_cached;
+static bool rgb_base_hsv_valid;
+
+static void rgb_base_cache_invalidate(void)
+{
+    rgb_base_direction_valid = false;
+    rgb_base_hsv_valid = false;
+}
+
 #ifdef RGB_GAMMA_ENABLE
 /* Gamma curve and global brightness folded into one byte-to-byte table, so a
  * frame costs three lookups per LED instead of three powf() calls. Rebuilt
@@ -94,6 +113,7 @@ void rgb_init(void)
     }
 #endif
     rgb_frame_rendered = false;
+    rgb_base_cache_invalidate();
 #ifdef RGB_GAMMA_ENABLE
     rgb_output_lut_valid = false;
 #endif
@@ -152,9 +172,16 @@ static void rgb_render_base(void)
     {
         return;
     }
-    const float direction = (float)g_rgb_base_config.direction * ((float)M_PI / 180.0f);
-    const float direction_sin = sinf(direction);
-    const float direction_cos = cosf(direction);
+    if (!rgb_base_direction_valid || rgb_base_direction_cached != g_rgb_base_config.direction)
+    {
+        const float direction = (float)g_rgb_base_config.direction * ((float)M_PI / 180.0f);
+        rgb_base_direction_sin = sinf(direction);
+        rgb_base_direction_cos = cosf(direction);
+        rgb_base_direction_cached = g_rgb_base_config.direction;
+        rgb_base_direction_valid = true;
+    }
+    const float direction_sin = rgb_base_direction_sin;
+    const float direction_cos = rgb_base_direction_cos;
     const float time_offset = rgb_base_time_offset();
     const float density = g_rgb_base_config.density;
     ColorRGB temp_rgb;
@@ -164,8 +191,15 @@ static void rgb_render_base(void)
 #if RGB_BASE_MODE_USE_RAINBOW
     case RGB_BASE_MODE_RAINBOW:
     {
-        ColorHSV hsv;
-        rgb_to_hsv(&hsv, &g_rgb_base_config.rgb);
+        const ColorRGB *base_rgb = &g_rgb_base_config.rgb;
+        if (!rgb_base_hsv_valid || rgb_base_rgb_cached.r != base_rgb->r ||
+            rgb_base_rgb_cached.g != base_rgb->g || rgb_base_rgb_cached.b != base_rgb->b)
+        {
+            rgb_to_hsv(&rgb_base_hsv_cached, base_rgb);
+            rgb_base_rgb_cached = *base_rgb;
+            rgb_base_hsv_valid = true;
+        }
+        ColorHSV hsv = rgb_base_hsv_cached;
         const float base_hue = hsv.h;
         for (uint16_t i = 0; i < RGB_NUM; i++)
         {
@@ -378,6 +412,13 @@ static void rgb_render_jelly(uint16_t index, float travel)
 }
 #endif
 
+/* Travel of the key with dead zones removed, 0..1; 0 for an unmapped LED.
+ * Only the modes that use it pay for it. */
+static inline float rgb_key_travel(const Key *key)
+{
+    return key != NULL ? (float)keyboard_get_key_effective_analog_value((Key *)key) * (1.0f / ANALOG_VALUE_RANGE) : 0.0f;
+}
+
 static void rgb_render_keys(void)
 {
     ColorRGB temp_rgb;
@@ -386,21 +427,15 @@ static void rgb_render_keys(void)
         Color *target_color = &g_rgb_colors[i];
         RGBConfig *config = &g_rgb_configs[i];
         const Key *key = keyboard_get_key(g_rgb_mapping[i]);
-        /* Travel of the key with dead zones removed, 0..1. */
-        float travel = 0.0f;
-        bool report_state = false;
-        if (key != NULL)
-        {
-            travel = (float)keyboard_get_key_effective_analog_value((Key *)key) * (1.0f / ANALOG_VALUE_RANGE);
-            report_state = key->report_state;
-        }
-        UNUSED(report_state);
+        const bool report_state = key != NULL && key->report_state;
+        UNUSED(report_state);   /* only some compiled-in modes use these */
+        UNUSED(key);
 
         switch (config->mode)
         {
 #if RGB_MODE_USE_LINEAR
         case RGB_MODE_LINEAR:
-            temp_rgb = rgb_scale(&config->rgb, travel);
+            temp_rgb = rgb_scale(&config->rgb, rgb_key_travel(key));
             color_mix(target_color, &temp_rgb);
             break;
 #endif
@@ -445,13 +480,12 @@ static void rgb_render_keys(void)
 #endif
 #if RGB_MODE_USE_JELLY
         case RGB_MODE_JELLY:
-            rgb_render_jelly(i, travel);
+            rgb_render_jelly(i, rgb_key_travel(key));
             break;
 #endif
         default:
             break;
         }
-        UNUSED(travel);     /* only some compiled-in modes use these */
         UNUSED(temp_rgb);
     }
 }
