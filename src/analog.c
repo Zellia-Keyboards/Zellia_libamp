@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 #include "analog.h"
+#include "analog_internal.h"
 
 Filter g_analog_filters[ADVANCED_KEY_NUM];
 #if defined(FILTER_HYSTERESIS_ENABLE)
@@ -86,16 +87,5 @@ void ringbuf_push(RingBuffer* ringbuf, AnalogRawValue data)
 
 AnalogRawValue ringbuf_avg(RingBuffer* ringbuf)
 {
-#ifdef OPTIMIZE_MOVING_AVERAGE_FOR_RINGBUF
-    if (!ringbuf->dirty)
-    {
-        return (AnalogRawValue)(ringbuf->sum / RING_BUF_LEN);
-    }
-#endif
-    uint32_t sum = 0;
-    for (int i = 0; i < RING_BUF_LEN; i++)
-    {
-        sum += ringbuf->datas[i];
-    }
-    return (AnalogRawValue)(sum / RING_BUF_LEN);
+    return ringbuf_average(ringbuf);
 }

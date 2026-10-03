@@ -127,3 +127,17 @@ target_link_libraries(libamp_nexus_slave_tests
 )
 
 gtest_discover_tests(libamp_nexus_slave_tests)
+
+# Exercise bitmap-word boundaries with room for an additional empty slave.
+add_executable(libamp_nexus_wide_tests
+    test_common/keyboard_user.c
+    test_common/test_fixture.cpp
+    test_common/main.cpp
+    nexus/test_nexus.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/nexus.c
+)
+target_compile_definitions(libamp_nexus_wide_tests PRIVATE
+    NEXUS_SLICE_LENGTH_MAX=64 NEXUS_SLAVE_NUM=2
+)
+target_link_libraries(libamp_nexus_wide_tests PRIVATE libamp GTest::gtest_main)
+gtest_discover_tests(libamp_nexus_wide_tests TEST_PREFIX "NexusWide.")

@@ -6,6 +6,61 @@
 #include "math.h"
 #include "test_fixture.h"
 
+TEST(Keyboard, DebounceMatchesEveryCounterAndStateClass)
+{
+#if DEBOUNCE_PRESS > 0 || DEBOUNCE_RELEASE > 0
+    for (uint8_t physical : {0, 1, 2, 255}) {
+        for (uint8_t report : {0, 1, 2, 255}) {
+            for (int counter = INT8_MIN; counter <= INT8_MAX; counter++) {
+                Key key = {};
+                key.state = physical;
+                key.report_state = report;
+                key.debounce = counter;
+                bool expected = report;
+                int8_t next_counter = counter;
+                if (counter < 0) {
+                    next_counter = counter + 1;
+                } else if (report != 0 && physical == 0) {
+#if DEBOUNCE_RELEASE_EAGER
+                    expected = false;
+                    next_counter = -(int8_t)DEBOUNCE_RELEASE;
+#else
+                    next_counter = (int8_t)(counter + 1);
+                    if (next_counter >= (int8_t)DEBOUNCE_RELEASE) {
+                        expected = false;
+                        next_counter = 0;
+                    }
+#endif
+                } else if (report == 0 && physical != 0) {
+#if DEBOUNCE_PRESS_EAGER
+                    expected = true;
+                    next_counter = -(int8_t)DEBOUNCE_PRESS;
+#else
+                    next_counter = (int8_t)(counter + 1);
+                    if (next_counter >= (int8_t)DEBOUNCE_PRESS) {
+                        expected = true;
+                        next_counter = 0;
+                    }
+#endif
+                } else if (counter > 0) {
+                    next_counter = 0;
+                }
+                ASSERT_EQ(expected, keyboard_key_debounce(&key));
+                ASSERT_EQ(next_counter, key.debounce);
+                ASSERT_EQ(physical, key.state);
+                ASSERT_EQ(report, key.report_state);
+            }
+        }
+    }
+#else
+    for (uint8_t physical : {0, 1, 2, 255}) {
+        Key key = {};
+        key.state = physical;
+        EXPECT_EQ(physical != 0, keyboard_key_debounce(&key));
+    }
+#endif
+}
+
 TEST(Keyboard, EveryBindingPreservesItsUnchangedDispatchPolicy)
 {
     for (uint32_t code = 0; code <= UINT16_MAX; code++) {

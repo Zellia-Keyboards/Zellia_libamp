@@ -10,6 +10,8 @@
 #include "packet.h"
 #include "packet_buffer.h"
 #include "analog.h"
+#include "advanced_key_internal.h"
+#include "keyboard_internal.h"
 
 #include "stdio.h"
 #include "string.h"
@@ -956,38 +958,20 @@ void keyboard_process(void)
 #endif
 }
 
-/* Debounce the physical state the scan just wrote into the key, publish the
- * resulting report state, and hand the key's bound keycode to the event
- * handler. Returns whether the report state changed. Unchanged keys skip the
- * handler call entirely unless their binding needs refreshing on every poll
- * (see keyboard_event_needs_dispatch()); this is the per-key, per-tick fast path. */
-static inline bool keyboard_key_report_and_dispatch(Key *key)
-{
-    const bool changed = keyboard_key_set_report_state(key, keyboard_key_debounce(key));
-    const Keycode keycode = layer_cache_get_keycode(key->id);
-    if (changed || keyboard_keycode_dispatches_unchanged(keycode))
-    {
-        /* Most polls have nothing to dispatch. Keep event construction on
-         * this branch so Cortex-M does not spill an unused event to stack. */
-        keyboard_event_handler(MK_EVENT(keycode, EVENT_TYPE(changed, key->report_state), key));
-    }
-    return changed;
-}
 
 bool keyboard_key_update(Key *key, bool state)
 {
-    key_update(key, state);
-    return keyboard_key_report_and_dispatch(key);
+    return keyboard_update_key_state(key, state);
 }
 
 bool keyboard_advanced_key_update(AdvancedKey *advanced_key, AnalogValue value)
 {
-    advanced_key_update(advanced_key, value);
+    advanced_key_update_value(advanced_key, value);
     return keyboard_key_report_and_dispatch(&advanced_key->key);
 }
 
 bool keyboard_advanced_key_update_raw(AdvancedKey *advanced_key, AnalogRawValue raw)
 {
-    advanced_key_update_raw(advanced_key, raw);
+    advanced_key_update_sample(advanced_key, raw);
     return keyboard_key_report_and_dispatch(&advanced_key->key);
 }

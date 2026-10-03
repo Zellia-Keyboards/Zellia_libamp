@@ -34,6 +34,39 @@ bool synthesize_version_response;
 bool corrupt_response_id;
 bool drop_echo;
 bool fail_send;
+void (*down_callback)(Key *);
+
+class ScopedNexusMapping {
+public:
+    ScopedNexusMapping(const uint16_t *map, uint16_t length)
+        : saved_(g_nexus_slave_configs[0])
+    {
+        g_nexus_slave_configs[0] = {length, map};
+        nexus_init();
+    }
+
+    ~ScopedNexusMapping()
+    {
+        g_nexus_slave_configs[0] = saved_;
+        nexus_init();
+    }
+
+private:
+    NexusSlaveKeymap saved_;
+};
+
+class ScopedDownCallback {
+public:
+    explicit ScopedDownCallback(void (*callback)(Key *))
+    {
+        down_callback = callback;
+    }
+
+    ~ScopedDownCallback()
+    {
+        down_callback = nullptr;
+    }
+};
 
 void reset_capture()
 {
@@ -63,11 +96,17 @@ void set_test_config(uint16_t key_index)
 }
 
 // Deliver a report frame from slave 0 as its transport would.
-void deliver_report(uint16_t index, AnalogRawValue raw, AnalogValue value, uint32_t bitmap)
+void deliver_report(uint16_t index, AnalogRawValue raw, AnalogValue value,
+                    uint32_t bitmap, uint32_t bitmap_high = 0)
 {
     PacketNexus packet;
-    const volatile uint32_t bits[NEXUS_BITMAP_WORDS] = {bitmap};
-    nexus_report_encode(&packet, index, raw, value, bits, 3);
+    volatile uint32_t bits[NEXUS_BITMAP_WORDS] = {bitmap};
+#if NEXUS_BITMAP_WORDS > 1
+    bits[1] = bitmap_high;
+#else
+    (void)bitmap_high;
+#endif
+    nexus_report_encode(&packet, index, raw, value, bits, g_nexus_slave_configs[0].length);
     nexus_process_buffer(0, reinterpret_cast<uint8_t *>(&packet), sizeof(packet));
 }
 
@@ -83,6 +122,14 @@ void bring_slave_online_and_drain()
 }
 
 } // namespace
+
+extern "C" void keyboard_key_event_down_callback_user(Key *key)
+{
+    if (down_callback != nullptr)
+    {
+        down_callback(key);
+    }
+}
 
 // The transport stub: capture what the master sends, then behave like a slave
 // that processes the packet and echoes it back through nexus_process_buffer().
@@ -410,6 +457,54 @@ TEST(NexusReport, RejectsFramesThatAreTooShortOrFromUnknownSlaves)
     EXPECT_FALSE(g_keyboard_advanced_keys[2].key.state);
 }
 
+TEST(NexusReport, AcceptsAFrameEndingAtTheLastMappedBitmapByte)
+{
+    reset_capture();
+    uint8_t frame[offsetof(PacketNexus, bits) + 1] = {};
+    frame[0] = NEXUS_REPORT_FLAG | 0x7F;
+    frame[offsetof(PacketNexus, bits)] = 0b101;
+
+    nexus_process_buffer(0, frame, sizeof(frame));
+    nexus_process();
+
+    EXPECT_TRUE(nexus_slave_is_online(0));
+    EXPECT_TRUE(g_keyboard_advanced_keys[2].key.state);
+    EXPECT_FALSE(g_keyboard_advanced_keys[5].key.state);
+    EXPECT_TRUE(g_keyboard_advanced_keys[8].key.state);
+}
+
+TEST(NexusReport, IgnoresExtraBitmapBytesEvenWhenCallbackExtendsTheMapping)
+{
+    reset_capture();
+    uint16_t map[NEXUS_SLICE_LENGTH_MAX];
+    for (uint16_t &id : map)
+    {
+        id = 0xFFFF;
+    }
+    map[0] = 2;
+    map[NEXUS_SLICE_LENGTH_MAX - 1] = 8;
+    ScopedNexusMapping mapping(map, 1);
+    g_keymap_cache[2] = KEY_A;
+    g_keyboard_advanced_keys[8].key.state = true;
+    ScopedDownCallback callback([](Key *key) {
+        if (key->id == 2)
+        {
+            g_nexus_slave_configs[0].length = NEXUS_SLICE_LENGTH_MAX;
+            nexus_init();
+        }
+    });
+    PacketNexus packet = {};
+    packet.index = NEXUS_REPORT_FLAG | 0x7F;
+    std::memset(packet.bits, 0xFF, sizeof(packet.bits));
+    packet.bits[0] = 1;
+
+    nexus_process_buffer(0, reinterpret_cast<uint8_t *>(&packet), sizeof(packet));
+    nexus_process();
+
+    EXPECT_TRUE(g_keyboard_advanced_keys[2].key.state);
+    EXPECT_FALSE(g_keyboard_advanced_keys[8].key.state);
+}
+
 TEST(NexusReport, CopiesAnalogDataOfTheIndexedKeyExactly)
 {
     reset_capture();
@@ -556,3 +651,223 @@ TEST(NexusReport, LayerSwitchedBySlaveKeyAppliesToKeysProcessedAfterIt)
     nexus_process();
     EXPECT_TRUE(g_keyboard_advanced_keys[2].key.report_state);
 }
+
+TEST(NexusReport, UnchangedFrameRestoresExternallyChangedPhysicalState)
+{
+    reset_capture();
+    Key *key = &g_keyboard_advanced_keys[5].key;
+    deliver_report(0, 0, 0, 0);
+    nexus_process();
+
+    key->state = true;
+    nexus_process();
+
+    EXPECT_EQ(0, key->state);
+    EXPECT_EQ(0, key->report_state);
+    EXPECT_EQ(0, key->debounce);
+}
+
+TEST(NexusReport, UnchangedFrameDebouncesExternallyChangedReportState)
+{
+    reset_capture();
+    Key *key = &g_keyboard_advanced_keys[5].key;
+    deliver_report(0, 0, 0, 0);
+    nexus_process();
+
+    keyboard_key_set_report_state(key, true);
+    for (int tick = 0; tick < DEBOUNCE_RELEASE - 1; tick++)
+    {
+        nexus_process();
+        EXPECT_TRUE(key->report_state);
+    }
+    nexus_process();
+
+    EXPECT_FALSE(key->report_state);
+    EXPECT_EQ(0, key->debounce);
+    EXPECT_EQ(0u, g_keyboard_bitmap[0] & (1U << 5));
+}
+
+TEST(NexusReport, NoncanonicalStateBytesStillRunTheNormalUpdate)
+{
+    reset_capture();
+    Key *key = &g_keyboard_advanced_keys[5].key;
+    deliver_report(0, 0, 0, 0b010);
+    key->state = 2;
+    key->report_state = 2;
+
+    nexus_process();
+
+    EXPECT_EQ(1, key->state);
+    EXPECT_EQ(1, key->report_state);
+    EXPECT_EQ(0, key->debounce);
+}
+
+TEST(NexusReport, UnchangedFrameSeesKeymapEdits)
+{
+    reset_capture();
+    g_keymap_cache[5] = KEY_A;
+    deliver_report(0, 0, 0, 0);
+    nexus_process();
+    ASSERT_FALSE(g_keyboard_advanced_keys[5].key.report_state);
+
+    g_keymap_cache[5] = KEYCODE(MOUSE_COLLECTION, MOUSE_MOVE_UP);
+    g_keyboard_report_flags.mouse = false;
+    nexus_process();
+
+    EXPECT_TRUE((bool)g_keyboard_report_flags.mouse);
+    EXPECT_TRUE(g_keyboard_advanced_keys[5].key.report_state);
+}
+
+TEST(NexusReport, DuplicateMappingsApplyEachSlotInOrder)
+{
+    reset_capture();
+    const uint16_t map[] = {2, 2, 0xFFFF, 5};
+    ScopedNexusMapping mapping(map, 4);
+    deliver_report(0, 0, 0, 0b1001);
+
+    nexus_process();
+
+    EXPECT_FALSE(g_keyboard_advanced_keys[2].key.state);
+    EXPECT_TRUE(g_keyboard_advanced_keys[2].key.report_state);
+    EXPECT_EQ(1 - DEBOUNCE_PRESS, g_keyboard_advanced_keys[2].key.debounce);
+    EXPECT_TRUE(g_keyboard_advanced_keys[5].key.state);
+
+    nexus_process();
+    EXPECT_FALSE(g_keyboard_advanced_keys[2].key.state);
+    EXPECT_EQ(3 - DEBOUNCE_PRESS, g_keyboard_advanced_keys[2].key.debounce);
+}
+
+TEST(NexusReport, CallbackEditsToLaterKeysApplyDuringTheSameTick)
+{
+    reset_capture();
+    g_keymap_cache[2] = KEY_A;
+    g_keymap_cache[8] = KEY_A;
+    ScopedDownCallback callback([](Key *key) {
+        if (key->id == 2)
+        {
+            g_keyboard_advanced_keys[8].key.state = true;
+            g_keymap_cache[8] = KEYCODE(MOUSE_COLLECTION, MOUSE_MOVE_UP);
+        }
+    });
+    deliver_report(0, 0, 0, 0b001);
+
+    nexus_process();
+
+    EXPECT_FALSE(g_keyboard_advanced_keys[8].key.state);
+    EXPECT_TRUE(g_keyboard_advanced_keys[8].key.report_state);
+    EXPECT_TRUE((bool)g_keyboard_report_flags.mouse);
+}
+
+TEST(NexusReport, FrameReceivedByCallbackTakesEffectOnTheFollowingTick)
+{
+    reset_capture();
+    g_keymap_cache[2] = KEY_A;
+    ScopedDownCallback callback([](Key *key) {
+        if (key->id == 2)
+        {
+            deliver_report(0, 0, 0, 0);
+        }
+    });
+    deliver_report(0, 0, 0, 0b111);
+
+    nexus_process();
+    EXPECT_TRUE(g_keyboard_advanced_keys[2].key.state);
+    EXPECT_TRUE(g_keyboard_advanced_keys[5].key.state);
+    EXPECT_TRUE(g_keyboard_advanced_keys[8].key.state);
+
+    nexus_process();
+    EXPECT_FALSE(g_keyboard_advanced_keys[2].key.state);
+    EXPECT_FALSE(g_keyboard_advanced_keys[5].key.state);
+    EXPECT_FALSE(g_keyboard_advanced_keys[8].key.state);
+}
+
+TEST(NexusReport, MappingShortenedByCallbackStopsAtTheNewEnd)
+{
+    reset_capture();
+    const uint16_t map[] = {2, 5, 8};
+    ScopedNexusMapping mapping(map, 3);
+    g_keymap_cache[2] = KEY_A;
+    ScopedDownCallback callback([](Key *key) {
+        if (key->id == 2)
+        {
+            g_nexus_slave_configs[0].length = 1;
+            nexus_init();
+        }
+    });
+    deliver_report(0, 0, 0, 0b111);
+
+    nexus_process();
+
+    EXPECT_TRUE(g_keyboard_advanced_keys[2].key.state);
+    EXPECT_FALSE(g_keyboard_advanced_keys[5].key.state);
+    EXPECT_FALSE(g_keyboard_advanced_keys[8].key.state);
+}
+
+TEST(NexusReport, EmptyMappingLeavesLocalKeysAlone)
+{
+    reset_capture();
+    ScopedNexusMapping mapping(nullptr, 0);
+    g_keyboard_advanced_keys[2].key.state = true;
+
+    nexus_process();
+
+    EXPECT_TRUE(g_keyboard_advanced_keys[2].key.state);
+}
+
+TEST(NexusReport, BitmapAppliesThroughTheEndOfASixteenSlotMapping)
+{
+    reset_capture();
+    const uint16_t map[] = {16, 17, 18, 19, 20, 21, 22, 23,
+                           24, 25, 26, 27, 28, 29, 30, 31};
+    ScopedNexusMapping mapping(map, 16);
+    deliver_report(0, 0, 0, 0x8009);
+
+    nexus_process();
+
+    EXPECT_TRUE(g_keyboard_advanced_keys[16].key.state);
+    EXPECT_FALSE(g_keyboard_advanced_keys[17].key.state);
+    EXPECT_FALSE(g_keyboard_advanced_keys[18].key.state);
+    EXPECT_TRUE(g_keyboard_advanced_keys[19].key.state);
+    EXPECT_FALSE(g_keyboard_advanced_keys[30].key.state);
+    EXPECT_TRUE(g_keyboard_advanced_keys[31].key.state);
+
+    deliver_report(0, 0, 0, 0);
+    nexus_process();
+    EXPECT_FALSE(g_keyboard_advanced_keys[16].key.state);
+    EXPECT_FALSE(g_keyboard_advanced_keys[19].key.state);
+    EXPECT_FALSE(g_keyboard_advanced_keys[31].key.state);
+}
+
+#if NEXUS_SLICE_LENGTH_MAX > 32
+TEST(NexusReport, SnapshotKeepsLaterBitmapWordsWhenCallbackReceivesAnotherFrame)
+{
+    reset_capture();
+    uint16_t map[33];
+    for (uint16_t &id : map)
+    {
+        id = 0xFFFF;
+    }
+    map[0] = 2;
+    map[31] = 5;
+    map[32] = 8;
+    ScopedNexusMapping mapping(map, 33);
+    g_keymap_cache[2] = KEY_A;
+    ScopedDownCallback callback([](Key *key) {
+        if (key->id == 2)
+        {
+            deliver_report(0, 0, 0, 0, 0);
+        }
+    });
+    deliver_report(0, 0, 0, 0x80000001U, 1);
+
+    nexus_process();
+    EXPECT_TRUE(g_keyboard_advanced_keys[2].key.state);
+    EXPECT_TRUE(g_keyboard_advanced_keys[5].key.state);
+    EXPECT_TRUE(g_keyboard_advanced_keys[8].key.state);
+
+    nexus_process();
+    EXPECT_FALSE(g_keyboard_advanced_keys[2].key.state);
+    EXPECT_FALSE(g_keyboard_advanced_keys[5].key.state);
+    EXPECT_FALSE(g_keyboard_advanced_keys[8].key.state);
+}
+#endif

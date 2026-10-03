@@ -57,7 +57,7 @@ def main():
                 samples[name].setdefault(metric, []).append(value)
 
     print(f"Median of {args.repeats} alternating runs; positive savings mean less time.")
-    print("| Workload | Unit | fable/baseline | Candidate | Time saved |")
+    print("| Workload | Unit | Baseline | Candidate | Time saved |")
     print("| --- | --- | ---: | ---: | ---: |")
     for metric in samples["baseline"]:
         baseline = statistics.median(samples["baseline"][metric])

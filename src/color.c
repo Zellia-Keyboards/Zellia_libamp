@@ -40,16 +40,16 @@ void rgb_to_hsv(ColorHSV * restrict hsv, const ColorRGB * restrict rgb)
     hsv->v = (uint8_t)(max * 100.0f / 255.0f);
 }
 
-/* Integer HSV to RGB. s and v are percentages and the hue fraction is in
- * sixtieths of a degree, so every divisor is a compile-time constant (which
- * the compiler turns into a multiply): no runtime division and no floating
- * point for an operation that runs once per LED per frame in the hue-driven
- * effects. Results are the floor of the exact value, as before. */
+/* Integer HSV to RGB. Bounded reciprocals and constant divisors avoid runtime
+ * division and floating point in this per-LED operation. Every channel still
+ * uses the floor of the exact percentage conversion. */
 void hsv_to_rgb(ColorRGB * restrict rgb, const ColorHSV * restrict hsv)
 {
     const uint32_t v = hsv->v > 100 ? 100 : hsv->v;
     const uint32_t s = hsv->s > 100 ? 100 : hsv->s;
-    const uint8_t value = (uint8_t)(v * 255u / 100u);
+    /* 5223/2048 = 255/100 + 3/10240. For v <= 100 the excess is
+     * below 1/20, the smallest fractional step of v*255/100. */
+    const uint8_t value = (uint8_t)((v * 5223u) >> 11);
     if (s == 0)
     {
         rgb->r = value;
@@ -57,13 +57,17 @@ void hsv_to_rgb(ColorRGB * restrict rgb, const ColorHSV * restrict hsv)
         rgb->b = value;
         return;
     }
-    const uint32_t sector = hsv->h / 60u;
-    const uint32_t fraction = hsv->h - sector * 60u;    /* 0..59 sixtieths of a degree */
-    const uint8_t x = (uint8_t)(v * (100u - s) * 255u / 10000u);
-    /* Even sectors use the rising channel, odd sectors the falling channel.
-     * Each sector needs only one of them, with the same exact truncation. */
-    const uint32_t interpolation = sector & 1u ? fraction : 60u - fraction;
-    const uint8_t intermediate = (uint8_t)(v * (6000u - s * interpolation) * 255u / 600000u);
+    /* This reciprocal is exact for every uint16_t hue: its excess over 1/60
+     * is 28/(60*2^21), giving an error below 1/60 even at UINT16_MAX.
+     * The product also fits in 32 bits, avoiding a wide multiply on M4. */
+    const uint32_t sector = ((uint32_t)hsv->h * 34953u) >> 21;
+    /* Distance from the odd sector boundary gives the rising channel for
+     * even sectors and the falling channel for odd sectors. */
+    const int32_t distance = (int32_t)hsv->h - (int32_t)((sector | 1u) * 60u);
+    const uint32_t interpolation = distance < 0 ? (uint32_t)-distance : (uint32_t)distance;
+    const uint32_t scaled_value = v * 255u;
+    const uint8_t x = (uint8_t)(scaled_value * (100u - s) / 10000u);
+    const uint8_t intermediate = (uint8_t)(scaled_value * (6000u - s * interpolation) / 600000u);
     switch (sector)
     {
         case 0:  rgb->r = value;        rgb->g = intermediate; rgb->b = x;            break;

@@ -58,20 +58,22 @@ TEST(Color, HsvConversionMatchesScalarForEveryValidInput)
     }
 }
 
-TEST(Color, HsvConversionPreservesClampingAndInvalidHueBehavior)
+TEST(Color, HsvConversionPreservesClampingAndEveryRawHue)
 {
-    const uint16_t hues[] = {0, 59, 60, 119, 120, 179, 180, 239, 240, 299, 300, 359, 360, 419, 65535};
     const uint8_t percentages[] = {0, 1, 50, 100, 101, 255};
-    for (uint16_t h : hues) {
+    for (uint32_t h = 0; h <= UINT16_MAX; h++) {
         for (uint8_t s : percentages) {
             for (uint8_t v : percentages) {
-                const ColorHSV hsv = {h, s, v};
+                const ColorHSV hsv = {static_cast<uint16_t>(h), s, v};
                 const ColorRGB expected = scalar_hsv_to_rgb(hsv);
-                ColorRGB actual = {};
+                // Invalid chromatic hues must overwrite the destination with
+                // black; grayscale ignores hue, including every invalid hue.
+                ColorRGB actual = {0xA5, 0x5A, 0xC3};
                 hsv_to_rgb(&actual, &hsv);
-                EXPECT_EQ(expected.r, actual.r);
-                EXPECT_EQ(expected.g, actual.g);
-                EXPECT_EQ(expected.b, actual.b);
+                if (actual.r != expected.r || actual.g != expected.g || actual.b != expected.b) {
+                    FAIL() << "HSV " << h << ',' << unsigned(s) << ',' << unsigned(v)
+                           << " changed its clamped or invalid-hue RGB bytes";
+                }
             }
         }
     }

@@ -658,6 +658,15 @@ Small differences within run-to-run variation are inconclusive. On the target,
 measure keyboard-tick cycles with the board's timer or cycle counter under the
 same ADC, USB, and RGB load before claiming an end-to-end latency improvement.
 
+The [aggressive performance report](docs/performance/aggressive.md) records the
+changes from `codex-fable`, raw measurements, behavior checks, and code-size
+tradeoffs. To compare the raw-key pipeline across two source checkouts:
+
+```bash
+python3 test/advanced_key/check_pipeline.py path/to/reference-checkout .
+python3 test/advanced_key/check_pipeline.py path/to/reference-checkout . --cflags='-flto -ffast-math'
+```
+
 The `levelx` combinations need 32-bit host C/C++ libraries (LevelX on-flash words
 must match the 32-bit firmware); `FILE_SYSTEM_TYPE` is 2 for FileX and 1 for
 LittleFS:

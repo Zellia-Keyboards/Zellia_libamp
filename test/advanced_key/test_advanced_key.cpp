@@ -3,6 +3,135 @@
 #include "advanced_key.h"
 #include "math.h"
 
+/* Characterize the complete raw path against the public, separate calibration
+ * and normalized-update operations. The board fixture supplies a nonlinear
+ * normalizer, so bypassing the weak hook cannot accidentally pass this test. */
+#if !defined(FILTER_ENABLE) && !defined(FILTER_HYSTERESIS_ENABLE) && !defined(CALIBRATION_LPF_ENABLE)
+TEST(AdvancedKeyTest, RawPipelineMatchesSeparateUpdates)
+{
+    uint32_t random = 0x13579bdf;
+    for (uint8_t mode = 0; mode <= ADVANCED_KEY_ANALOG_SPEED_MODE + 1; mode++) {
+        for (uint8_t calibration = 0; calibration <= ADVANCED_KEY_AUTO_CALIBRATION_UNDEFINED + 1; calibration++) {
+            SCOPED_TRACE(mode);
+            SCOPED_TRACE(calibration);
+            AdvancedKey actual = {};
+            actual.config.mode = mode;
+            actual.config.calibration_mode = calibration;
+            actual.config.activation_value = 30000;
+            actual.config.deactivation_value = 29000;
+            actual.config.trigger_distance = 2500;
+            actual.config.release_distance = 1800;
+            actual.config.trigger_speed = 1000;
+            actual.config.release_speed = 900;
+            actual.config.upper_deadzone = 100;
+            actual.config.lower_deadzone = 200;
+            advanced_key_set_range(&actual, 32768, 16384);
+            AdvancedKey expected = actual;
+            for (unsigned i = 0; i < 4096; i++) {
+                random = random * 1664525u + 1013904223u;
+                const AnalogRawValue raw = i < 4 ? (AnalogRawValue)(32768 + (int)i - 2) : random >> 16;
+                // Configuration writes are public and must take effect immediately.
+                if ((i & 127) == 0) {
+                    actual.config.mode = expected.config.mode = (mode + i / 128) % 5;
+                    actual.config.calibration_mode = expected.config.calibration_mode = calibration;
+                }
+                expected.raw = raw;
+                AnalogValue value = raw;
+                if (expected.config.mode != ADVANCED_KEY_DIGITAL_MODE) {
+                    expected.filtered_raw = raw;
+                    const int delta = (int)raw - expected.config.upper_bound;
+                    bool normalize = true;
+                    switch (expected.config.calibration_mode) {
+                    case ADVANCED_KEY_AUTO_CALIBRATION_POSITIVE:
+                        if (raw > expected.config.lower_bound)
+                            advanced_key_set_range(&expected, expected.config.upper_bound, raw);
+                        break;
+                    case ADVANCED_KEY_AUTO_CALIBRATION_NEGATIVE:
+                        if (raw < expected.config.lower_bound)
+                            advanced_key_set_range(&expected, expected.config.upper_bound, raw);
+                        break;
+                    case ADVANCED_KEY_AUTO_CALIBRATION_UNDEFINED:
+                        if (delta > DEFAULT_ESTIMATED_RANGE || -delta > DEFAULT_ESTIMATED_RANGE) {
+                            expected.config.calibration_mode = delta > 0 ? ADVANCED_KEY_AUTO_CALIBRATION_POSITIVE : ADVANCED_KEY_AUTO_CALIBRATION_NEGATIVE;
+                            advanced_key_set_range(&expected, expected.config.upper_bound, raw);
+                        } else {
+                            normalize = false;
+                        }
+                        break;
+                    default:
+                        break;
+                    }
+                    value = normalize ? advanced_key_normalize(&expected, raw) : ANALOG_VALUE_MIN;
+                }
+                const bool changed = advanced_key_update(&expected, value);
+                ASSERT_EQ(changed, advanced_key_update_raw(&actual, raw)) << i;
+                ASSERT_EQ(expected.key.state, actual.key.state) << i;
+                ASSERT_EQ(expected.value, actual.value) << i;
+                ASSERT_EQ(expected.raw, actual.raw) << i;
+                ASSERT_EQ(expected.filtered_raw, actual.filtered_raw) << i;
+                ASSERT_EQ(expected.difference, actual.difference) << i;
+                ASSERT_EQ(expected.extremum, actual.extremum) << i;
+                ASSERT_EQ(expected.config.calibration_mode, actual.config.calibration_mode) << i;
+                ASSERT_EQ(expected.config.lower_bound, actual.config.lower_bound) << i;
+                ASSERT_EQ(expected.q_scale_to_index, actual.q_scale_to_index) << i;
+            }
+        }
+    }
+}
+#endif
+
+#if !defined(FILTER_ENABLE) && !defined(FILTER_HYSTERESIS_ENABLE)
+TEST(AdvancedKeyTest, RapidTriggerMatchesStateMachineAcrossBoundaries)
+{
+    uint32_t random = 0x2468ace0;
+    for (unsigned initial_state = 0; initial_state < 2; initial_state++) {
+        for (unsigned distance : {0u, 1u, 4096u, 65535u}) {
+            AdvancedKey key = {};
+            key.config.mode = ADVANCED_KEY_ANALOG_RAPID_MODE;
+            key.config.trigger_distance = distance;
+            key.config.release_distance = distance;
+            key.config.upper_deadzone = 512;
+            key.config.lower_deadzone = 1024;
+            key.key.state = initial_state;
+            key.extremum = 32768;
+            for (unsigned i = 0; i < 65536; i++) {
+                random = random * 1664525u + 1013904223u;
+                const AnalogValue boundaries[] = {0, 512, 513, 64510, 64511, 65535};
+                const AnalogValue value = i % 8 < 6 ? boundaries[i % 8] : random >> 16;
+                const bool was_pressed = key.key.state;
+                bool pressed = was_pressed;
+                AnalogValue extremum = key.extremum;
+                if (value - ANALOG_VALUE_MIN <= key.config.upper_deadzone) {
+                    pressed = false;
+                    extremum = std::min(extremum, value);
+                } else if (value >= ANALOG_VALUE_MAX - key.config.lower_deadzone) {
+                    pressed = true;
+                    extremum = std::max(extremum, value);
+                } else if (was_pressed) {
+                    if ((int)extremum - value >= (int)distance) {
+                        pressed = false;
+                        extremum = value;
+                    }
+                    extremum = std::max(extremum, value);
+                } else {
+                    if ((int)value - extremum >= (int)distance) {
+                        pressed = true;
+                        extremum = value;
+                    }
+                    extremum = std::min(extremum, value);
+                }
+                const int16_t difference = value - key.value;
+                ASSERT_EQ(pressed != was_pressed, advanced_key_update(&key, value)) << i;
+                ASSERT_EQ(pressed, key.key.state) << i;
+                ASSERT_EQ(extremum, key.extremum) << i;
+                ASSERT_EQ(difference, key.difference) << i;
+                ASSERT_EQ(value, key.value) << i;
+            }
+        }
+    }
+}
+#endif
+
 /* A normalizer override consumes this public Q16 scale. Compare every raw
  * span and direction with the wide signed definition, including spans whose
  * quotient uses the high bit when LUT_LENGTH is configured near 65535. */

@@ -8,6 +8,7 @@
 #include "driver.h"
 #include "analog.h"
 #include "layer.h"
+#include "keyboard_internal.h"
 #include <stddef.h>
 #include <string.h>
 
@@ -236,14 +237,23 @@ static bool nexus_receive_report(NexusSlave *slave, const uint8_t *buf, uint16_t
      * tick never observes a half-written bitmap. */
     for (uint16_t w = 0; w < NEXUS_BITMAP_WORDS; w++)
     {
+        const uint16_t byte = (uint16_t)(w * 4);
         uint32_t word = 0;
-        for (uint16_t b = 0; b < 4; b++)
+        if (byte < bitmap_bytes)
         {
-            const uint16_t byte = (uint16_t)(w * 4 + b);
-            if (byte < bitmap_bytes)
-            {
-                word |= (uint32_t)packet->bits[byte] << (8 * b);
-            }
+            word = packet->bits[byte];
+        }
+        if (byte + 1U < sizeof(packet->bits) && byte + 1U < bitmap_bytes)
+        {
+            word |= (uint32_t)packet->bits[byte + 1] << 8;
+        }
+        if (byte + 2U < sizeof(packet->bits) && byte + 2U < bitmap_bytes)
+        {
+            word |= (uint32_t)packet->bits[byte + 2] << 16;
+        }
+        if (byte + 3U < sizeof(packet->bits) && byte + 3U < bitmap_bytes)
+        {
+            word |= (uint32_t)packet->bits[byte + 3] << 24;
         }
         slave->bitmap[w] = word;
     }
@@ -316,17 +326,88 @@ void nexus_process_buffer(uint8_t slave_id, uint8_t *buf, uint16_t len)
  * exactly as it would be inside keyboard_key_update(). */
 static inline bool nexus_key_update_has_effect(const Key *key, bool state)
 {
-    if (key->state != state || key->report_state != key->state)
+    /* These adjacent bytes can be checked with one halfword load. memcpy
+     * keeps this valid for every alignment and under strict aliasing; the
+     * repeated-byte expected value is also independent of endianness. The
+     * layout fallback keeps the test correct if Key ever gains padding here. */
+    if (offsetof(Key, report_state) == offsetof(Key, state) + 1)
     {
-        return true;
-    }
+        uint16_t states;
+        memcpy(&states, &key->state, sizeof(states));
+        uint32_t unsettled = states ^ ((uint32_t)state * 0x0101U);
 #if DEBOUNCE_PRESS > 0 || DEBOUNCE_RELEASE > 0
-    if (key->debounce != 0)
-    {
-        return true;
-    }
+        unsettled |= (uint8_t)key->debounce;
 #endif
+        if (unsettled != 0)
+        {
+            return true;
+        }
+    }
+    else
+    {
+        if (key->state != state || key->report_state != key->state)
+        {
+            return true;
+        }
+#if DEBOUNCE_PRESS > 0 || DEBOUNCE_RELEASE > 0
+        if (key->debounce != 0)
+        {
+            return true;
+        }
+#endif
+    }
     return keyboard_keycode_dispatches_unchanged(layer_cache_get_keycode(key->id));
+}
+
+static inline Key *const *nexus_bitmap_word_end(const NexusSlave *slave, uint32_t first)
+{
+#if NEXUS_BITMAP_WORDS > 1
+    return slave->keys + NEXUS_MIN(slave->length, first + 32);
+#else
+    UNUSED(first);
+    return slave->keys + slave->length;
+#endif
+}
+
+static inline void nexus_apply_bitmap_word(NexusSlave *slave, uint32_t bitmap, uint32_t first)
+{
+    Key *const *next = slave->keys + first;
+    Key *const *end = nexus_bitmap_word_end(slave, first);
+
+    /* Resting words need no per-slot bit extraction, and their expected key
+     * state is the constant zero. Still inspect every live key at its turn:
+     * callbacks and layer changes can alter the keys that follow them. */
+    if (bitmap == 0)
+    {
+        while (next < end)
+        {
+            Key *key = *next++;
+            if (key != NULL && nexus_key_update_has_effect(key, false))
+            {
+                /* Keep the resting loop compact. Active words below inline
+                 * the update to reuse their already-loaded key state. */
+                keyboard_key_update(key, false);
+                /* Only a dispatched update can call user code and change
+                 * the mapping. Refresh the bound after it, preserving even
+                 * a nexus_init() performed by a key callback. */
+                end = nexus_bitmap_word_end(slave, first);
+            }
+        }
+    }
+    else
+    {
+        while (next < end)
+        {
+            Key *key = *next++;
+            const bool state = bitmap & 1U;
+            bitmap >>= 1;
+            if (key != NULL && nexus_key_update_has_effect(key, state))
+            {
+                keyboard_update_key_state(key, state);
+                end = nexus_bitmap_word_end(slave, first);
+            }
+        }
+    }
 }
 #endif
 
@@ -366,15 +447,14 @@ void nexus_process(void)
             memset(bitmap, 0, sizeof(bitmap));   /* vanished slave: release */
         }
 
-        for (uint16_t j = 0; j < slave->length; j++)
+#if NEXUS_BITMAP_WORDS == 1
+        nexus_apply_bitmap_word(slave, bitmap[0], 0);
+#else
+        for (uint32_t first = 0; first < slave->length; first += 32)
         {
-            Key *key = slave->keys[j];
-            const bool state = (bitmap[j / 32] >> (j % 32)) & 1U;
-            if (key != NULL && nexus_key_update_has_effect(key, state))
-            {
-                keyboard_key_update(key, state);
-            }
+            nexus_apply_bitmap_word(slave, bitmap[first / 32], first);
         }
+#endif
     }
 #endif
 }
