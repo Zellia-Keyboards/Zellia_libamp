@@ -17,7 +17,65 @@ uint8_t gamma_correct(uint8_t value, uint8_t brightness)
 #endif
 }
 
+// The scalar conversion before the interpolation optimization is an exact
+// byte oracle, including percentage clamping and invalid hues.
+ColorRGB scalar_hsv_to_rgb(const ColorHSV &hsv)
+{
+    const uint32_t v = hsv.v > 100 ? 100 : hsv.v;
+    const uint32_t s = hsv.s > 100 ? 100 : hsv.s;
+    const uint8_t value = static_cast<uint8_t>(v * 255u / 100u);
+    if (s == 0) {
+        return {value, value, value};
+    }
+    const uint32_t sector = hsv.h / 60u;
+    const uint32_t fraction = hsv.h - sector * 60u;
+    const uint8_t x = static_cast<uint8_t>(v * (100u - s) * 255u / 10000u);
+    const uint8_t y = static_cast<uint8_t>(v * (6000u - s * fraction) * 255u / 600000u);
+    const uint8_t z = static_cast<uint8_t>(v * (6000u - s * (60u - fraction)) * 255u / 600000u);
+    const ColorRGB sectors[] = {
+        {value, z, x}, {y, value, x}, {x, value, z},
+        {x, y, value}, {z, x, value}, {value, x, y},
+    };
+    return sector < 6 ? sectors[sector] : ColorRGB{0, 0, 0};
+}
+
 } // namespace
+
+TEST(Color, HsvConversionMatchesScalarForEveryValidInput)
+{
+    for (uint16_t h = 0; h < 360; h++) {
+        for (uint16_t s = 0; s <= 100; s++) {
+            for (uint16_t v = 0; v <= 100; v++) {
+                const ColorHSV hsv = {h, static_cast<uint8_t>(s), static_cast<uint8_t>(v)};
+                const ColorRGB expected = scalar_hsv_to_rgb(hsv);
+                ColorRGB actual = {};
+                hsv_to_rgb(&actual, &hsv);
+                if (actual.r != expected.r || actual.g != expected.g || actual.b != expected.b) {
+                    FAIL() << "HSV " << h << ',' << s << ',' << v << " changed its RGB bytes";
+                }
+            }
+        }
+    }
+}
+
+TEST(Color, HsvConversionPreservesClampingAndInvalidHueBehavior)
+{
+    const uint16_t hues[] = {0, 59, 60, 119, 120, 179, 180, 239, 240, 299, 300, 359, 360, 419, 65535};
+    const uint8_t percentages[] = {0, 1, 50, 100, 101, 255};
+    for (uint16_t h : hues) {
+        for (uint8_t s : percentages) {
+            for (uint8_t v : percentages) {
+                const ColorHSV hsv = {h, s, v};
+                const ColorRGB expected = scalar_hsv_to_rgb(hsv);
+                ColorRGB actual = {};
+                hsv_to_rgb(&actual, &hsv);
+                EXPECT_EQ(expected.r, actual.r);
+                EXPECT_EQ(expected.g, actual.g);
+                EXPECT_EQ(expected.b, actual.b);
+            }
+        }
+    }
+}
 
 TEST(Color, ConvertsPrimaryColorsBetweenRgbAndHsv)
 {
@@ -175,6 +233,59 @@ TEST(RGB, TriggerFadeEndsExactlyWhereTheColorTruncatesToBlack)
     rgb_process();
     EXPECT_EQ(0, g_rgb_colors[0].r);
     EXPECT_EQ(0, g_rgb_colors[0].g);
+}
+
+TEST(RGB, TriggerMatchesScalarForHeldAndReleasedKeysAcrossSpeeds)
+{
+    g_rgb_base_config.mode = RGB_BASE_MODE_BLANK;
+    for (uint16_t i = 0; i < RGB_NUM; i++) {
+        g_rgb_configs[i].mode = RGB_MODE_FIXED;
+        g_rgb_configs[i].rgb = {0, 0, 0};
+    }
+    RGBConfig &config = g_rgb_configs[0];
+    config.mode = RGB_MODE_TRIGGER;
+    Key *key = keyboard_get_key(g_rgb_mapping[0]);
+    ASSERT_NE(nullptr, key);
+    const int16_t speeds[] = {-32768, -20, -1, 0, 1, 20, 32767};
+    for (int16_t speed : speeds) {
+        SCOPED_TRACE(speed);
+        rgb_init();
+        config.speed = speed;
+        config.rgb = {255, 128, 64};
+        key->report_state = 1;
+        // Held frames also cross the tick wrap and must keep restarting decay.
+        const uint32_t held_ticks[] = {0xFFFFFFF0u, 0xFFFFFFFBu, 1u};
+        for (uint32_t tick : held_ticks) {
+            g_keyboard_tick = tick;
+            rgb_process();
+            EXPECT_EQ(tick, config.begin_tick);
+            EXPECT_EQ(config.rgb.r, g_rgb_colors[0].r);
+            EXPECT_EQ(config.rgb.g, g_rgb_colors[0].g);
+            EXPECT_EQ(config.rgb.b, g_rgb_colors[0].b);
+        }
+        key->report_state = 0;
+        // Negative speeds grow the color. Keep those samples within the byte
+        // conversion's defined range, including the most negative speed.
+        if (speed < 0) {
+            config.rgb = {1, 2, 3};
+        }
+        const uint32_t elapsed_ticks[] = {1, 10, 100, 2850};
+        for (uint32_t elapsed : elapsed_ticks) {
+            if (speed == -32768 && elapsed != 1) {
+                continue;
+            }
+            if (speed < 0 && elapsed == 2850) {
+                continue;
+            }
+            g_keyboard_tick = config.begin_tick + elapsed;
+            const float span = static_cast<float>(KEYBOARD_TICK_TO_TIME(elapsed)) * static_cast<float>(speed);
+            const float intensity = std::exp(span * -1.0000500033e-4f);
+            rgb_process();
+            EXPECT_EQ(static_cast<uint8_t>(intensity * config.rgb.r), g_rgb_colors[0].r);
+            EXPECT_EQ(static_cast<uint8_t>(intensity * config.rgb.g), g_rgb_colors[0].g);
+            EXPECT_EQ(static_cast<uint8_t>(intensity * config.rgb.b), g_rgb_colors[0].b);
+        }
+    }
 }
 
 TEST(RGB, FrameDueCheckHonoursTheIntervalAcrossTickWrap)

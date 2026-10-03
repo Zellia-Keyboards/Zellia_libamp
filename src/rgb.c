@@ -442,11 +442,24 @@ static void rgb_render_keys(void)
 #if RGB_MODE_USE_TRIGGER
         case RGB_MODE_TRIGGER:
         {
+            uint32_t elapsed_ticks;
             if (report_state)
             {
                 config->begin_tick = g_keyboard_tick;
+                elapsed_ticks = g_keyboard_tick - config->begin_tick;
+                if (elapsed_ticks == 0)
+                {
+                    /* expf(0) is exactly one. Preserve the decay path if an
+                     * interrupt advanced the tick after restarting it. */
+                    color_mix(target_color, &config->rgb);
+                    break;
+                }
             }
-            const float exponent = CALC_SPAN(g_keyboard_tick - config->begin_tick, config->speed) * RGB_TRIGGER_DECAY_LN;
+            else
+            {
+                elapsed_ticks = g_keyboard_tick - config->begin_tick;
+            }
+            const float exponent = CALC_SPAN(elapsed_ticks, config->speed) * RGB_TRIGGER_DECAY_LN;
             if (exponent < RGB_TRIGGER_DECAY_SILENT)
             {
                 break;  /* faded to black: nothing to mix in */

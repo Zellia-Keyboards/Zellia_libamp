@@ -233,10 +233,21 @@ void advanced_key_set_range(AdvancedKey* advanced_key, AnalogRawValue upper, Ana
     advanced_key->config.upper_bound = upper;
     advanced_key->config.lower_bound = lower;
     const int32_t range = (int32_t)upper - (int32_t)lower;
-    /* Q16 factor that turns a raw delta into a lookup-table index; only
-     * recomputed when the calibrated range moves, so the division is off the
-     * per-tick path. */
+    /* A 64-bit target can divide this directly in its native word size. On
+     * 32-bit MCUs, avoid a software 64-bit divide when calibration expands. */
+#if UINTPTR_MAX > UINT32_MAX
     advanced_key->q_scale_to_index = range != 0 ? (int32_t)(((int64_t)LUT_LENGTH << 16) / range) : 0;
+#elif LUT_LENGTH <= 32767
+    /* Small tables fit a signed numerator and need just one SDIV on M4. */
+    advanced_key->q_scale_to_index = range != 0 ? ((int32_t)LUT_LENGTH << 16) / range : 0;
+#else
+    /* LUT_LENGTH <= 65535 still fits uint32_t. Divide the magnitude, then
+     * restore the sign with unsigned arithmetic, preserving the old cast
+     * even for quotients above INT32_MAX. */
+    const uint32_t magnitude = (uint32_t)(range < 0 ? -range : range);
+    const uint32_t scale = magnitude != 0 ? ((uint32_t)LUT_LENGTH << 16) / magnitude : 0;
+    advanced_key->q_scale_to_index = (int32_t)(range < 0 ? 0u - scale : scale);
+#endif
 }
 
 void advanced_key_reset_range(AdvancedKey* advanced_key, AnalogRawValue value)

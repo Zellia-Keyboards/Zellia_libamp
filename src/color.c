@@ -60,16 +60,18 @@ void hsv_to_rgb(ColorRGB * restrict rgb, const ColorHSV * restrict hsv)
     const uint32_t sector = hsv->h / 60u;
     const uint32_t fraction = hsv->h - sector * 60u;    /* 0..59 sixtieths of a degree */
     const uint8_t x = (uint8_t)(v * (100u - s) * 255u / 10000u);
-    const uint8_t y = (uint8_t)(v * (6000u - s * fraction) * 255u / 600000u);
-    const uint8_t z = (uint8_t)(v * (6000u - s * (60u - fraction)) * 255u / 600000u);
+    /* Even sectors use the rising channel, odd sectors the falling channel.
+     * Each sector needs only one of them, with the same exact truncation. */
+    const uint32_t interpolation = sector & 1u ? fraction : 60u - fraction;
+    const uint8_t intermediate = (uint8_t)(v * (6000u - s * interpolation) * 255u / 600000u);
     switch (sector)
     {
-        case 0:  rgb->r = value; rgb->g = z;     rgb->b = x;     break;
-        case 1:  rgb->r = y;     rgb->g = value; rgb->b = x;     break;
-        case 2:  rgb->r = x;     rgb->g = value; rgb->b = z;     break;
-        case 3:  rgb->r = x;     rgb->g = y;     rgb->b = value; break;
-        case 4:  rgb->r = z;     rgb->g = x;     rgb->b = value; break;
-        case 5:  rgb->r = value; rgb->g = x;     rgb->b = y;     break;
+        case 0:  rgb->r = value;        rgb->g = intermediate; rgb->b = x;            break;
+        case 1:  rgb->r = intermediate; rgb->g = value;        rgb->b = x;            break;
+        case 2:  rgb->r = x;            rgb->g = value;        rgb->b = intermediate; break;
+        case 3:  rgb->r = x;            rgb->g = intermediate; rgb->b = value;        break;
+        case 4:  rgb->r = intermediate; rgb->g = x;            rgb->b = value;        break;
+        case 5:  rgb->r = value;        rgb->g = x;            rgb->b = intermediate; break;
         default: rgb->r = 0;     rgb->g = 0;     rgb->b = 0;     break; /* hue out of range */
     }
 }

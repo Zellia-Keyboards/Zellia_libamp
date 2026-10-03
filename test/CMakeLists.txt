@@ -72,6 +72,24 @@ target_link_libraries(libamp_bench
     libamp
 )
 
+# Select the MCU's fixed-width calibration arithmetic even on a 64-bit host.
+# This copy satisfies the linker before libamp's native-word implementation.
+add_executable(libamp_calibration_32bit_tests
+    test_common/keyboard_user.c
+    test_common/test_fixture.cpp
+    test_common/main.cpp
+    advanced_key/test_advanced_key.cpp
+    advanced_key/advanced_key_32bit.c
+)
+
+target_link_libraries(libamp_calibration_32bit_tests
+    PRIVATE
+    libamp
+    GTest::gtest_main
+)
+
+gtest_discover_tests(libamp_calibration_32bit_tests TEST_PREFIX "Calibration32.")
+
 # nexus.c is built into libamp as a bitmap-mode master. The two variants below
 # compile their own copy of nexus.c with the raw-sample and slave
 # configurations; their definitions satisfy the linker before the archive's

@@ -3,6 +3,31 @@
 #include "advanced_key.h"
 #include "math.h"
 
+/* A normalizer override consumes this public Q16 scale. Compare every raw
+ * span and direction with the wide signed definition, including spans whose
+ * quotient uses the high bit when LUT_LENGTH is configured near 65535. */
+TEST(AdvancedKeyTest, CalibrationScaleMatchesEveryRawSpan)
+{
+    AdvancedKey key = {};
+    const int64_t numerator = (int64_t)LUT_LENGTH << 16;
+    for (uint32_t span = 1; span <= UINT16_MAX; span++)
+    {
+        advanced_key_set_range(&key, (AnalogRawValue)span, 0);
+        ASSERT_EQ((int32_t)(numerator / span), key.q_scale_to_index) << "span=" << span;
+        ASSERT_EQ(span, key.config.upper_bound);
+        ASSERT_EQ(0, key.config.lower_bound);
+
+        advanced_key_set_range(&key, 0, (AnalogRawValue)span);
+        ASSERT_EQ((int32_t)(-numerator / span), key.q_scale_to_index) << "span=" << span;
+        ASSERT_EQ(0, key.config.upper_bound);
+        ASSERT_EQ(span, key.config.lower_bound);
+    }
+    advanced_key_set_range(&key, 2048, 2048);
+    EXPECT_EQ(0, key.q_scale_to_index);
+    EXPECT_EQ(ANALOG_VALUE_MIN, advanced_key_normalize(&key, 0));
+    EXPECT_EQ(ANALOG_VALUE_MIN, advanced_key_normalize(&key, UINT16_MAX));
+}
+
 TEST(AdvancedKeyTest, DigitalMode)
 {
     static AdvancedKey advanced_key =

@@ -279,7 +279,12 @@ static inline Key* keyboard_get_key(uint16_t id)
  * act on held keys. Everything else is skipped when the state is unchanged. */
 static inline bool keyboard_keycode_dispatches_unchanged(Keycode keycode)
 {
-    switch (KEYCODE_GET_MAIN(keycode))
+    const uint8_t main = KEYCODE_GET_MAIN(keycode);
+    if (main <= KEY_EXSEL)
+    {
+        return false; /* ordinary keys and modifiers only dispatch edges */
+    }
+    switch (main)
     {
 #ifdef MOUSE_ENABLE
     case MOUSE_COLLECTION:

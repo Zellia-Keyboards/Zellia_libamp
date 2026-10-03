@@ -964,12 +964,12 @@ void keyboard_process(void)
 static inline bool keyboard_key_report_and_dispatch(Key *key)
 {
     const bool changed = keyboard_key_set_report_state(key, keyboard_key_debounce(key));
-    const KeyboardEvent event = MK_EVENT(layer_cache_get_keycode(key->id),
-                                         EVENT_TYPE(changed, key->report_state),
-                                         key);
-    if (keyboard_event_needs_dispatch(event))
+    const Keycode keycode = layer_cache_get_keycode(key->id);
+    if (changed || keyboard_keycode_dispatches_unchanged(keycode))
     {
-        keyboard_event_handler(event);
+        /* Most polls have nothing to dispatch. Keep event construction on
+         * this branch so Cortex-M does not spill an unused event to stack. */
+        keyboard_event_handler(MK_EVENT(keycode, EVENT_TYPE(changed, key->report_state), key));
     }
     return changed;
 }

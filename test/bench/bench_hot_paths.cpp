@@ -50,9 +50,13 @@ void calibrate_all_keys(void)
 {
     for (int i = 0; i < ADVANCED_KEY_NUM; i++)
     {
+        /* The fixture's full keymap contains layer/profile/reset keys. A
+         * simultaneous press must not reconfigure the workload being timed. */
+        g_keymap[0][i] = KEY_A + i % 26;
         g_keyboard_advanced_keys[i].config.calibration_mode = ADVANCED_KEY_AUTO_CALIBRATION_UNDEFINED;
         advanced_key_reset_range(&g_keyboard_advanced_keys[i], 2048);
     }
+    layer_cache_refresh();
 }
 
 void feed_raw(uint16_t raw)
@@ -78,6 +82,26 @@ void tick_travel(void)
     feed_raw((uint16_t)((std::cos(g_keyboard_tick / 100.0f) + 1.0f) * 1024.0f));
     g_keyboard_tick++;
     keyboard_task();
+}
+
+/* Range updates run in the input tick whenever auto-calibration sees a new
+ * extremum. Measure them separately from already-calibrated travel. */
+void update_ranges(void)
+{
+    const uint16_t span = (g_keyboard_tick++ & 2047u) + 1;
+    for (int i = 0; i < ADVANCED_KEY_NUM; i++)
+    {
+        advanced_key_set_range(&g_keyboard_advanced_keys[i], 2048, 2048 - span);
+    }
+}
+
+void convert_hues(void)
+{
+    for (uint16_t hue = 0; hue < 360; hue++)
+    {
+        const ColorHSV hsv = {hue, 78, 99};
+        hsv_to_rgb(&led_color_buffer[hue % RGB_NUM], &hsv);
+    }
 }
 
 uint32_t slave_bitmap;
@@ -119,6 +143,27 @@ void frame(void)
     rgb_process();
 }
 
+/* Keep all eight ripples alive for the whole measurement. Cycling a bounded
+ * effect age avoids timing mostly empty frames after RGB_MAX_DURATION. */
+uint32_t ripple_tick;
+void ripple_frame(void)
+{
+    g_keyboard_tick = ripple_tick + 1 + ((g_keyboard_tick - ripple_tick) % 128);
+    rgb_process();
+}
+
+/* Released trigger keys at a representative point in their fade, rather than
+ * an already black effect after millions of keyboard ticks. */
+void trigger_frame(void)
+{
+    g_keyboard_tick++;
+    for (int i = 0; i < RGB_NUM; i++)
+    {
+        g_rgb_configs[i].begin_tick = g_keyboard_tick - KEYBOARD_TIME_TO_TICK(100);
+    }
+    rgb_process();
+}
+
 void set_per_key_mode(RGBMode mode)
 {
     for (int i = 0; i < RGB_NUM; i++)
@@ -135,6 +180,11 @@ int main(int argc, char **argv)
 {
     const long ticks = argc > 1 ? std::atol(argv[1]) : 200000;
     const long frames = argc > 2 ? std::atol(argv[2]) : 5000;
+    if (ticks <= 0 || frames <= 0)
+    {
+        std::fprintf(stderr, "usage: %s [positive ticks] [positive frames]\n", argv[0]);
+        return EXIT_FAILURE;
+    }
 
     libamp_test_reset_environment();
     calibrate_all_keys();
@@ -142,9 +192,16 @@ int main(int argc, char **argv)
     {
         tick_travel(); /* let auto-calibration settle on the sine range */
     }
+    if (g_keyboard_advanced_keys[0].value == ANALOG_VALUE_MIN)
+    {
+        std::fprintf(stderr, "benchmark did not scan the travelling analog keys\n");
+        return EXIT_FAILURE;
+    }
 
     std::printf("keyboard_task, idle keys      : %8.1f ns/tick\n", ns_per_call(tick_idle, ticks));
     std::printf("keyboard_task, travelling keys: %8.1f ns/tick\n", ns_per_call(tick_travel, ticks));
+    std::printf("advanced_key_set_range        : %8.3f ns/key\n", ns_per_call(update_ranges, ticks) / ADVANCED_KEY_NUM);
+    std::printf("hsv_to_rgb, saturated colors  : %8.3f ns/color\n", ns_per_call(convert_hues, frames) / 360);
 
     nexus_init();
     std::printf("nexus_process, 16 idle slave keys   : %8.1f ns/tick\n", ns_per_call(nexus_tick_idle, ticks));
@@ -157,15 +214,26 @@ int main(int argc, char **argv)
 
     g_rgb_base_config.mode = RGB_BASE_MODE_WAVE;
     set_per_key_mode(RGB_MODE_TRIGGER);
-    std::printf("rgb_process, wave + trigger    : %8.1f ns/frame\n", ns_per_call(frame, frames));
+    for (int i = 0; i < ADVANCED_KEY_NUM; i++)
+    {
+        g_keyboard_advanced_keys[i].key.report_state = false;
+    }
+    std::printf("rgb_process, wave + fading trigger: %8.1f ns/frame\n", ns_per_call(trigger_frame, frames));
+    for (int i = 0; i < ADVANCED_KEY_NUM; i++)
+    {
+        g_keyboard_advanced_keys[i].key.report_state = true;
+    }
+    std::printf("rgb_process, wave + held trigger  : %8.1f ns/frame\n", ns_per_call(frame, frames));
 
+    rgb_init(); /* discard effects left by the keyboard workload */
     g_rgb_base_config.mode = RGB_BASE_MODE_BLANK;
     set_per_key_mode(RGB_MODE_BUBBLE);
+    ripple_tick = g_keyboard_tick;
     for (int i = 0; i < 8; i++)
     {
         rgb_activate(i * 7, g_keyboard_tick); /* eight live ripples */
     }
-    std::printf("rgb_process, 8 bubble ripples  : %8.1f ns/frame\n", ns_per_call(frame, frames));
+    std::printf("rgb_process, 8 live bubble ripples: %8.1f ns/frame\n", ns_per_call(ripple_frame, frames));
     std::printf("(sanity: %u led flushes, led[0] = %u,%u,%u, key[0] value = %u)\n",
                 (unsigned)led_flush_count, led_color_buffer[0].r, led_color_buffer[0].g, led_color_buffer[0].b,
                 (unsigned)g_keyboard_advanced_keys[0].value);

@@ -6,6 +6,65 @@
 #include "math.h"
 #include "test_fixture.h"
 
+TEST(Keyboard, EveryBindingPreservesItsUnchangedDispatchPolicy)
+{
+    for (uint32_t code = 0; code <= UINT16_MAX; code++) {
+        const uint8_t main = code & 0xff;
+        const uint8_t sub = code >> 8;
+        bool expected = main == KEY_USER;
+#ifdef MOUSE_ENABLE
+        expected |= main == MOUSE_COLLECTION && sub >= 0x10;
+#endif
+#ifdef JOYSTICK_ENABLE
+        expected |= main == JOYSTICK_COLLECTION && sub >= 0x20;
+#endif
+#ifdef GAMEPAD_ENABLE
+        expected |= main == GAMEPAD_COLLECTION && sub > GAMEPAD_RT;
+#endif
+        ASSERT_EQ(expected, keyboard_keycode_dispatches_unchanged((Keycode)code)) << code;
+    }
+}
+
+TEST(Keyboard, UnchangedInputRefreshesAxesButNotButtons)
+{
+    const struct {
+        Keycode binding;
+        uint8_t report_flags;
+    } cases[] = {
+        {KEY_A, 0},
+#ifdef MOUSE_ENABLE
+        {MOUSE_COLLECTION | (MOUSE_LBUTTON << 8), 0},
+        {MOUSE_COLLECTION | (MOUSE_MOVE_RIGHT << 8), 1u << MOUSE_REPORT_FLAG},
+#endif
+#ifdef JOYSTICK_ENABLE
+        {JOYSTICK_COLLECTION, 0},
+        {JOYSTICK_COLLECTION | (1u << 13), 1u << JOYSTICK_REPORT_FLAG},
+#endif
+#ifdef GAMEPAD_ENABLE
+        {GAMEPAD_COLLECTION | (GAMEPAD_A << 8), 0},
+        {GAMEPAD_COLLECTION | (GAMEPAD_LXP << 8), 1u << 5},
+#endif
+    };
+    AdvancedKey *key = &g_keyboard_advanced_keys[0];
+    for (const auto &item : cases) {
+        for (bool pressed : {false, true}) {
+            SCOPED_TRACE(item.binding);
+            SCOPED_TRACE(pressed);
+            layer_init();
+            g_keymap[0][0] = item.binding;
+            layer_cache_refresh();
+            advanced_key_init(key, 0);
+            key->config.mode = ADVANCED_KEY_DIGITAL_MODE;
+            key->key.state = key->key.report_state = pressed;
+            g_keyboard_report_flags.raw = 0;
+
+            EXPECT_FALSE(keyboard_advanced_key_update(key, pressed ? ANALOG_VALUE_MAX : 0));
+            EXPECT_EQ(item.report_flags, g_keyboard_report_flags.raw);
+            EXPECT_EQ(pressed || item.report_flags != 0, key->key.report_state);
+        }
+    }
+}
+
 
 void keyboard_advanced_key_update_state(AdvancedKey *key, bool state)
 {

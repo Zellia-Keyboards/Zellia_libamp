@@ -635,6 +635,29 @@ ctest --test-dir build/libamp-tests --output-on-failure
 When libamp is the repository root rather than a subdirectory, replace
 `third_party/libamp` with `.`.
 
+The host hot-path benchmark needs a **Release** build for useful measurements:
+
+```bash
+cmake -S . -B build/perf -DLIBAMP_BUILD_TESTS=ON -DCMAKE_BUILD_TYPE=Release
+cmake --build build/perf --parallel
+build/perf/test/libamp_bench 2000000 200000
+```
+
+It covers idle/travelling keys, calibration range updates, HSV conversion,
+Nexus slave keys, and live RGB effects. The keyboard workload uses ordinary
+bindings so simultaneous presses cannot switch profiles or reset the device.
+These are host timings including fixture overhead, not MCU cycles or USB
+latency. For comparisons, build both revisions with the same compiler, flags,
+configuration, and benchmark source, then alternate runs and compare medians:
+
+```bash
+python3 test/bench/compare.py path/to/baseline/libamp_bench path/to/candidate/libamp_bench --json build/perf/comparison.json
+```
+
+Small differences within run-to-run variation are inconclusive. On the target,
+measure keyboard-tick cycles with the board's timer or cycle counter under the
+same ADC, USB, and RGB load before claiming an end-to-end latency improvement.
+
 The `levelx` combinations need 32-bit host C/C++ libraries (LevelX on-flash words
 must match the 32-bit firmware); `FILE_SYSTEM_TYPE` is 2 for FileX and 1 for
 LittleFS:
